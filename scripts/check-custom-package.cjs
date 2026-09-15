@@ -38,12 +38,14 @@ for (const name of [
   assert(fs.statSync(path.join(root, name)).size > 0);
 }
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "hydra-package-smoke-"));
-// Isolated test profile; sandbox switch applies only to this CI smoke process.
+// Isolated test profile; sandbox switch applies only to this smoke process.
+const useDesktop = process.argv.includes("--use-desktop-display");
 const result = spawnSync(
-  "xvfb-run",
+  useDesktop ? path.resolve("dist/linux-unpacked/hydralauncher") : "xvfb-run",
   [
-    "-a",
-    path.resolve("dist/linux-unpacked/hydralauncher"),
+    ...(useDesktop
+      ? []
+      : ["-a", path.resolve("dist/linux-unpacked/hydralauncher")]),
     "--no-sandbox",
     "--disable-gpu",
     "--hidden",
