@@ -3,7 +3,7 @@ const path = require("node:path");
 const os = require("node:os");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
-const { spawnSync } = require("node:child_process");
+const { spawn } = require("node:child_process");
 const yaml = require("yaml");
 const asar = require("@electron/asar");
 const version = JSON.parse(fs.readFileSync("package.json")).version;
@@ -40,30 +40,67 @@ for (const name of [
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "hydra-package-smoke-"));
 // Isolated test profile; sandbox switch applies only to this smoke process.
 const useDesktop = process.argv.includes("--use-desktop-display");
-const result = spawnSync(
-  useDesktop ? path.resolve("dist/linux-unpacked/hydralauncher") : "xvfb-run",
-  [
-    ...(useDesktop
-      ? []
-      : ["-a", path.resolve("dist/linux-unpacked/hydralauncher")]),
-    "--no-sandbox",
-    "--disable-gpu",
-    "--hidden",
-    `--user-data-dir=${profile}`,
-  ],
-  { encoding: "utf8", timeout: 15000, killSignal: "SIGTERM" }
-);
-const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-assert(
-  !/Uncaught Exception|A JavaScript error occurred|Cannot find module|SyntaxError/.test(
-    output
-  ),
-  output
-);
-assert(
-  result.error?.code === "ETIMEDOUT",
-  `App exited before smoke test completed: ${output}`
-);
-console.log(
-  "Package files, checksums, update feed, and isolated startup smoke passed"
-);
+
+(async () => {
+  const result = await new Promise((resolve, reject) => {
+    let timedOut = false;
+    const logPath = path.join(profile, "startup.log");
+    const fd = fs.openSync(logPath, "w");
+    const args = [
+      ...(useDesktop
+        ? []
+        : ["-a", path.resolve("dist/linux-unpacked/hydralauncher")]),
+      "--no-sandbox",
+      "--disable-gpu",
+      "--hidden",
+      "--user-data-dir=" + profile,
+    ];
+    const child = spawn(
+      useDesktop
+        ? path.resolve("dist/linux-unpacked/hydralauncher")
+        : "xvfb-run",
+      args,
+      {
+        detached: true,
+        stdio: ["ignore", fd, fd],
+      }
+    );
+    fs.closeSync(fd);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch (error) {
+        if (error.code !== "ESRCH") reject(error);
+      }
+    }, 15000);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolve({ timedOut, output: fs.readFileSync(logPath, "utf8") });
+    });
+  });
+  assert(
+    !/Uncaught Exception|A JavaScript error occurred|Cannot find module|SyntaxError/.test(
+      result.output
+    ),
+    result.output
+  );
+  assert(
+    result.timedOut,
+    "App exited before smoke test completed: " + result.output
+  );
+  assert(
+    /Acquired (?:the )?lock/.test(result.output),
+    "App did not reach initialization: " + result.output
+  );
+  console.log(
+    "Package files, checksums, update feed, and isolated startup smoke passed"
+  );
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
