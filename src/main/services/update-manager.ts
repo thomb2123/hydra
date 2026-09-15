@@ -45,7 +45,10 @@ export class UpdateManager {
     autoUpdater
       .removeAllListeners()
       .on("error", (error: Error) => {
-        logger.warn("Custom update check failed; keeping the installed version", error);
+        logger.warn(
+          "Custom update check failed; keeping the installed version",
+          error
+        );
       })
       .on("update-available", (info: UpdateInfo) => {
         this.sendEvent({ type: "update-available", info });
@@ -64,11 +67,14 @@ export class UpdateManager {
 
     if (app.isPackaged) {
       autoUpdater.autoDownload = isAutoInstallAvailable;
-      autoUpdater.checkForUpdates().then((result) => {
-        logger.log(`Check for updates result: ${result}`);
-      }).catch((error: unknown) => {
-        logger.warn("Custom update check failed", error);
-      });
+      autoUpdater
+        .checkForUpdates()
+        .then((result) => {
+          logger.log(`Check for updates result: ${result}`);
+        })
+        .catch((error: unknown) => {
+          logger.warn("Custom update check failed", error);
+        });
     } else if (sendEventsForDebug) {
       this.mockValuesForDebug();
     }

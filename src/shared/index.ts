@@ -13,6 +13,8 @@ import {
   da,
   el,
   vi,
+  ja,
+  sl,
 } from "date-fns/locale";
 
 import { isArchiveOrgFileUri } from "./archive-org";
@@ -23,13 +25,18 @@ import { AchievementNotificationInfo, GameRepack } from "@types";
 
 export * from "./archive-org";
 export * from "./constants";
+export * from "./cloud-save-access";
 export * from "./controller-support";
 export * from "./artwork-resolver";
 export * from "./download-directories";
 export * from "./html-sanitizer";
 export * from "./language-flags";
 export * from "./use-hls-video";
+export * from "./use-souvenir-content-warning";
+export * from "./retroarch-platform";
 export * from "./tracker-list";
+export * from "./souvenirs";
+export * from "./souvenir-sync";
 
 export class UserNotLoggedInError extends Error {
   constructor() {
@@ -114,12 +121,19 @@ export const replaceNbspWithSpace = (name: string) =>
 export const replaceUnderscoreWithSpace = (name: string) =>
   name.replace(/_/g, " ");
 
+const charMapPattern = new RegExp(Object.keys(charMap).join("|"), "g");
+
+const COMBINING_MARKS = /[\u0300-\u036f]/g;
+
+export const removeDiacritics = (value: string) =>
+  value
+    .normalize("NFC")
+    .replace(charMapPattern, (match) => charMap[match])
+    .normalize("NFD")
+    .replace(COMBINING_MARKS, "");
+
 export const formatName = pipe<string>(
-  (str) =>
-    str.replace(
-      new RegExp(Object.keys(charMap).join("|"), "g"),
-      (match) => charMap[match]
-    ),
+  (str) => str.replace(charMapPattern, (match) => charMap[match]),
   (str) => str.toLowerCase(),
   removeReleaseYearFromName,
   removeSpecialEditionFromName,
@@ -276,6 +290,8 @@ export const getDateLocale = (language: string) => {
   if (language.startsWith("da")) return da;
   if (language.startsWith("el")) return el;
   if (language.startsWith("vi")) return vi;
+  if (language.startsWith("ja")) return ja;
+  if (language.startsWith("sl")) return sl;
 
   return enUS;
 };
@@ -312,3 +328,4 @@ export const generateAchievementCustomNotificationTest = (
     isPlatinum: options.isPlatinum ?? false,
   };
 };
+export * from "./emulator-systems";

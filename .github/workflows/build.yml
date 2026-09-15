@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.repository == 'hydralauncher/hydra'
     strategy:
       matrix:
         os: [windows-2022, ubuntu-latest]

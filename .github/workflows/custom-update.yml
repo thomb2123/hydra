@@ -1,0 +1,96 @@
+name: Custom Ubuntu updates
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 7 * * *"
+permissions:
+  contents: read
+concurrency:
+  group: custom-ubuntu-release
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.repository == 'thomb2123/hydra' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    outputs:
+      build: ${{ steps.candidate.outputs.build }}
+      version: ${{ steps.candidate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.1"
+      - run: corepack enable
+      - run: yarn install --frozen-lockfile --ignore-scripts
+      - id: candidate
+        run: node scripts/prepare-custom-update.cjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        if: steps.candidate.outputs.build == 'true'
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.candidate.outputs.build == 'true'
+      - name: Build and test the candidate without release credentials
+        if: steps.candidate.outputs.build == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 xvfb libfuse2
+          yarn install --frozen-lockfile --ignore-scripts
+          yarn build:native
+          yarn electron-builder install-app-deps
+          node scripts/postinstall.cjs
+          pip install -r requirements.txt
+          yarn build:python-rpc
+          cp config/custom.env .env
+          python3 scripts/patch-umu-steam-path.py
+          node scripts/check-custom-integration.cjs
+          node scripts/test-custom-shortcuts.cjs
+          yarn test
+          yarn build
+          yarn electron-builder --linux deb AppImage --publish never
+          node scripts/check-custom-package.cjs
+          git bundle create candidate.bundle custom-candidate
+      - uses: actions/upload-artifact@v4
+        if: steps.candidate.outputs.build == 'true'
+        with:
+          name: checked-custom-release
+          retention-days: 7
+          path: |
+            candidate.bundle
+            dist/*.deb
+            dist/*.AppImage
+            dist/latest-linux.yml
+  publish:
+    needs: build
+    if: needs.build.outputs.build == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: checked-custom-release
+          path: checked
+      - name: Publish only the tested commit and artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_HEAD"
+          git fetch checked/candidate.bundle custom-candidate
+          candidate=$(git rev-parse FETCH_HEAD)
+          git merge-base --is-ancestor "$EXPECTED_HEAD" "$candidate"
+          git push origin "$candidate:refs/heads/main"
+          gh release create "v$VERSION" --repo thomb2123/hydra --target "$candidate" --draft --title "Hydra $VERSION — custom Ubuntu build" --notes 'Includes automatic Steam shortcuts and Linux launch compatibility. Automated checks passed; overlay support remains game-dependent.' checked/dist/*.deb checked/dist/*.AppImage checked/dist/latest-linux.yml
+          gh release edit "v$VERSION" --repo thomb2123/hydra --draft=false --latest

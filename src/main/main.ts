@@ -26,6 +26,8 @@ import {
   Wine,
   WindowManager,
   logger,
+  migrateCloudSaveAutomaticSyncDefaults,
+  groupedSouvenirWorker,
 } from "@main/services";
 import { migrateDownloadSources } from "./helpers/migrate-download-sources";
 import { getDirSize } from "./services/download/helpers";
@@ -57,6 +59,7 @@ const hasMissingSeedFiles = async (download: Download): Promise<boolean> => {
 export const loadState = async () => {
   await Lock.acquireLock();
   await clearLegacyAchievementPersistence();
+  await migrateCloudSaveAutomaticSyncDefaults();
 
   const userPreferences = await db.get<string, UserPreferences | null>(
     levelKeys.userPreferences,
@@ -117,6 +120,7 @@ export const loadState = async () => {
 
     if (HydraApi.isLoggedIn()) {
       SSEClient.connect();
+      void groupedSouvenirWorker.trigger();
     }
   });
 
