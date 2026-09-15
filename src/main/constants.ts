@@ -4,7 +4,12 @@ import { SystemPath } from "./services/system-path";
 
 export const defaultDownloadsPath = SystemPath.getPath("downloads");
 
-export const isStaging = import.meta.env.MAIN_VITE_API_URL.includes("staging");
+// Environment variables are injected at build time and may be unset when
+// building from source. Treat an absent API URL as the production default
+// instead of crashing the main process during startup.
+export const isStaging = (import.meta.env.MAIN_VITE_API_URL ?? "").includes(
+  "staging"
+);
 
 export const windowsStartMenuPath = path.join(
   SystemPath.getPath("appData"),

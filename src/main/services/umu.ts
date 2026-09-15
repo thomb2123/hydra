@@ -8,6 +8,7 @@ import { logsPath } from "@main/constants";
 import { logger } from "./logger";
 import type { ProtonVersion } from "@types";
 import { resolveLaunchCommand } from "@main/helpers/resolve-launch-command";
+import { launchWithAutomaticSteamShortcut } from "./automatic-steam-shortcut";
 
 const isValidProtonDirectory = (directoryPath: string) => {
   const protonFilePath = path.join(directoryPath, "proton");
@@ -212,6 +213,7 @@ export class Umu {
       launchOptions?: string | null;
       useMangohud?: boolean;
       useGamemode?: boolean;
+      automaticSteamShortcut?: boolean;
     }
   ): Promise<void> {
     const QUICK_EXIT_THRESHOLD_MS = 3000;
@@ -249,10 +251,24 @@ export class Umu {
 
       ...(onlineFix
         ? {
-            GAMEID: "480",
+            GAMEID: "umu-480",
             SteamAppId: "480",
             SteamGameId: "480",
             WINEPREFIX: `${process.env.HOME}/SteamPrefixes/480`,
+            STEAM_COMPAT_CLIENT_INSTALL_PATH:
+              [
+                process.env.STEAM_COMPAT_CLIENT_INSTALL_PATH,
+                path.join(SystemPath.getPath("home"), ".steam", "root"),
+                path.join(
+                  SystemPath.getPath("home"),
+                  ".local",
+                  "share",
+                  "Steam"
+                ),
+              ].find(
+                (candidate) =>
+                  candidate && fs.existsSync(path.join(candidate, "steam.sh"))
+              ) ?? "",
             WINEDLLOVERRIDES:
               "OnlineFix64=n;SteamOverlay64=n;winmm=n,b;dnet=n;steam_api64=n;winhttp=n,b",
           }
@@ -292,6 +308,23 @@ export class Umu {
       env: launchEnv,
       umuLogPath,
     });
+
+    if (options?.automaticSteamShortcut) {
+      const handedOff = await launchWithAutomaticSteamShortcut({
+        executablePath,
+        command: resolvedLaunchCommand.command,
+        args: resolvedLaunchCommand.args,
+        env: launchEnv,
+        cwd: workingDirectory,
+      }).catch((error) => {
+        logger.warn(
+          "Automatic Steam shortcut failed; using direct launch",
+          error
+        );
+        return false;
+      });
+      if (handedOff) return;
+    }
 
     await new Promise<void>((resolve, reject) => {
       const shouldPipeToTerminal = is.dev;

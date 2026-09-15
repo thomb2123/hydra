@@ -70,6 +70,23 @@ const resolveShortcutAssetUrls = (game: Game, assets: ShopAssets | null) => ({
   library: assets?.libraryImageUrl ?? null,
 });
 
+const getOnlineFixSteamLaunchOptions = (executablePath: string) => {
+  if (process.platform !== "linux") return "";
+
+  const workingDirectory = path.dirname(executablePath);
+  const hasOnlineFix = ["OnlineFix64.dll", "OnlineFix.ini"].some((file) =>
+    fs.existsSync(path.join(workingDirectory, file))
+  );
+
+  if (!hasOnlineFix) return "";
+
+  return (
+    "SteamAppId=480 SteamGameId=480 " +
+    'WINEDLLOVERRIDES="OnlineFix64=n;SteamOverlay64=n;winmm=n,b;' +
+    'dnet=n;steam_api64=n;winhttp=n,b" %command%'
+  );
+};
+
 const downloadAssetsFromSteam = async (
   game: Game,
   assets: ShopAssets | null
@@ -226,7 +243,8 @@ const createSteamShortcut = async (
     : null;
   const shortcutTarget = deepLink ? getHydraShortcutTarget(deepLink) : null;
   const executablePath = shortcutTarget?.executablePath ?? game.executablePath!;
-  const launchOptions = shortcutTarget?.arguments ?? "";
+  const launchOptions =
+    shortcutTarget?.arguments ?? getOnlineFixSteamLaunchOptions(executablePath);
 
   const newShortcut = composeSteamShortcut(
     game.title,

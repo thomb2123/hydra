@@ -13,8 +13,11 @@ import {
   Wine,
   NativeAddon,
   launchedGamePids,
+  getSteamShortcuts,
+  getSteamUsersIds,
 } from "@main/services";
 import { CommonRedistManager } from "@main/services/common-redist-manager";
+import { launchWithAutomaticSteamShortcut } from "@main/services/automatic-steam-shortcut";
 import { parseExecutablePath } from "../events/helpers/parse-executable-path";
 import { isGamemodeAvailable } from "./is-gamemode-available";
 import { isMangohudAvailable } from "./is-mangohud-available";
@@ -34,6 +37,85 @@ export interface LaunchGameOptions {
 const isWindowsExecutable = (executablePath: string) =>
   path.extname(executablePath).toLowerCase() === ".exe";
 
+const hasOnlineFixFiles = (executablePath: string) => {
+  const workingDirectory = path.dirname(executablePath);
+
+  return ["OnlineFix64.dll", "OnlineFix.ini"].some((file) =>
+    fs.existsSync(path.join(workingDirectory, file))
+  );
+};
+
+const normalizeSteamShortcutPath = (value: string) =>
+  path.resolve(value.trim().replace(/^"|"$/g, ""));
+
+const getSteamRunGameId = (shortcutAppId: number) =>
+  ((BigInt(shortcutAppId >>> 0) << BigInt(32)) | BigInt(0x02000000)).toString();
+
+const launchOnlineFixThroughSteam = async (
+  _game: Game,
+  executablePath: string
+): Promise<boolean> => {
+  if (process.platform !== "linux" || !hasOnlineFixFiles(executablePath)) {
+    return false;
+  }
+
+  const expectedPath = path.resolve(executablePath);
+  const steamUserIds = await getSteamUsersIds();
+
+  for (const steamUserId of steamUserIds) {
+    const shortcuts = await getSteamShortcuts(steamUserId);
+    const shortcut = shortcuts.find(
+      (item) =>
+        typeof item.Exe === "string" &&
+        item.Exe.trim() !== "" &&
+        normalizeSteamShortcutPath(item.Exe) === expectedPath
+    );
+
+    if (!shortcut || !Number.isInteger(shortcut.appid) || !shortcut.appid)
+      continue;
+
+    const steamRunGameId = getSteamRunGameId(shortcut.appid);
+    logger.info("Redirecting OnlineFix launch through Steam", {
+      steamUserId,
+      shortcutAppId: shortcut.appid,
+      steamRunGameId,
+      executablePath,
+    });
+    try {
+      const steamExecutable =
+        ["/usr/games/steam", "/usr/bin/steam"].find((candidate) =>
+          fs.existsSync(candidate)
+        ) ?? "steam";
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(
+          steamExecutable,
+          [`steam://rungameid/${steamRunGameId}`],
+          {
+            detached: true,
+            stdio: "ignore",
+            shell: false,
+          }
+        );
+        child.once("error", reject);
+        child.once("spawn", () => {
+          child.unref();
+          resolve();
+        });
+      });
+    } catch (error) {
+      logger.warn("Steam launch handoff failed; using UMU", error);
+      return false;
+    }
+    return true;
+  }
+
+  logger.warn(
+    "OnlineFix game has no matching Steam shortcut; launching through UMU",
+    { executablePath }
+  );
+  return false;
+};
+
 const ensureExecutablePermission = (executablePath: string) => {
   try {
     const currentMode = fs.statSync(executablePath).mode;
@@ -50,12 +132,12 @@ const ensureExecutablePermission = (executablePath: string) => {
   }
 };
 
-const launchNatively = (
+const launchNatively = async (
   executablePath: string,
   launchOptions?: string | null,
   useMangohud = false,
   useGamemode = false
-): number | null => {
+): Promise<number | null> => {
   const workingDirectory = path.dirname(executablePath);
   const resolvedLaunchCommand = resolveLaunchCommand({
     baseCommand: executablePath,
@@ -68,6 +150,22 @@ const launchNatively = (
 
   if (process.platform === "linux") {
     ensureExecutablePermission(executablePath);
+    if (
+      await launchWithAutomaticSteamShortcut({
+        executablePath,
+        command: resolvedLaunchCommand.command,
+        args: resolvedLaunchCommand.args,
+        env: resolvedLaunchCommand.env,
+        cwd: workingDirectory,
+      }).catch((error) => {
+        logger.warn(
+          "Automatic Steam shortcut failed; using native launch",
+          error
+        );
+        return false;
+      })
+    )
+      return null;
   } else if (
     resolvedLaunchCommand.command === executablePath &&
     resolvedLaunchCommand.args.length === 0 &&
@@ -267,6 +365,7 @@ const launchWindowsBinaryOnLinux = async (
       launchOptions,
       useGamemode,
       useMangohud,
+      automaticSteamShortcut: true,
     });
     PowerSaveBlockerManager.markCompatibilityLaunchStarted(gameKey);
     return true;
@@ -344,6 +443,15 @@ export const launchGame = async (
   await new Promise((resolve) => setTimeout(resolve, 2000));
 
   if (process.platform === "linux") {
+    if (
+      game &&
+      isWindowsExecutable(parsedPath) &&
+      (await launchOnlineFixThroughSteam(game, parsedPath))
+    ) {
+      PowerSaveBlockerManager.markCompatibilityLaunchStarted(gameKey);
+      return null;
+    }
+
     if (isWindowsExecutable(parsedPath)) {
       const launched = await launchWindowsBinaryOnLinux(
         gameKey,
@@ -358,7 +466,7 @@ export const launchGame = async (
       if (launched) return null;
     }
 
-    const pid = launchNatively(
+    const pid = await launchNatively(
       parsedPath,
       launchOptions,
       useMangohud,

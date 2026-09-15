@@ -35,7 +35,7 @@ export class UpdateManager {
         }
       );
 
-      return userPreferences?.enableAutoInstall === true;
+      return userPreferences?.enableAutoInstall !== false;
     }
 
     return false;
@@ -44,6 +44,9 @@ export class UpdateManager {
   public static async checkForUpdates() {
     autoUpdater
       .removeAllListeners()
+      .on("error", (error: Error) => {
+        logger.warn("Custom update check failed; keeping the installed version", error);
+      })
       .on("update-available", (info: UpdateInfo) => {
         this.sendEvent({ type: "update-available", info });
         this.newVersion = info.version;
@@ -63,6 +66,8 @@ export class UpdateManager {
       autoUpdater.autoDownload = isAutoInstallAvailable;
       autoUpdater.checkForUpdates().then((result) => {
         logger.log(`Check for updates result: ${result}`);
+      }).catch((error: unknown) => {
+        logger.warn("Custom update check failed", error);
       });
     } else if (sendEventsForDebug) {
       this.mockValuesForDebug();
