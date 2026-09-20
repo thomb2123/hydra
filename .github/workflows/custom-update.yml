@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: "22.22.1"
       - run: corepack enable
-      - run: yarn install --frozen-lockfile --ignore-scripts
+      - run: yarn install --frozen-lockfile
       - id: candidate
         run: node scripts/prepare-custom-update.cjs
         env:
@@ -41,7 +41,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 xvfb libfuse2
-          yarn install --frozen-lockfile --ignore-scripts
+          yarn install --frozen-lockfile
           yarn build:native
           yarn electron-builder install-app-deps
           node scripts/postinstall.cjs
