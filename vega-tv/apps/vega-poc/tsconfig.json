@@ -1,0 +1,10 @@
+{
+  "extends": "@tsconfig/react-native/tsconfig.json",
+  "compilerOptions": {
+    "types": ["jest", "@amazon-devices/react-native-kepler"],
+    "baseUrl": ".",
+    "typeRoots": ["./node_modules/@types"],
+    "paths": {"*": ["./node_modules/*", "./node_modules/@types/*"]}
+  },
+  "include": ["src", "test", "../../shared/src", "../../shared/test"]
+}

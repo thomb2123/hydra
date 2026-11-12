@@ -1,0 +1,16 @@
+1
+00:00:01,000 --> 00:00:06,000
+External subtitle test: this text was
+fetched and parsed by the Vega app.
+
+2
+00:00:07,000 --> 00:00:12,000
+If you can read this, SRT subtitles work.
+
+3
+00:00:13,000 --> 00:00:20,000
+<i>Italic tags are stripped</i> &amp; entities decoded.
+
+4
+00:00:21,000 --> 00:00:40,000
+Subtitle test complete.
