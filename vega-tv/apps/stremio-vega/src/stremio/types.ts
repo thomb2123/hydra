@@ -89,6 +89,12 @@ export interface Subtitle {
   id: string;
   url: string;
   lang: string;
+  // OpenSubtitles v3 extras (optional, used to pick and time subtitles).
+  fpsMilli?: number;
+  movieReleaseName?: string;
+  subtitleFileName?: string;
+  /** Match type: 'h' = video hash, 'i' = IMDb id. */
+  m?: string;
 }
 
 export interface Stream {

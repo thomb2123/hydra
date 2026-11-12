@@ -58,6 +58,46 @@ export function parseSubtitles(input: string): Cue[] {
   return cues;
 }
 
+/**
+ * Scales cue times when a subtitle was made for a different frame rate than the
+ * video (e.g. 25 fps PAL subtitles on a 23.976 fps file drift ~4% late).
+ * Returns the cues unchanged when either rate is unknown or they already match.
+ */
+export function rescaleCues(cues: Cue[], subtitleFps?: number, videoFps?: number): Cue[] {
+  if (!subtitleFps || !videoFps || subtitleFps <= 1 || videoFps <= 1) {
+    return cues;
+  }
+  const factor = subtitleFps / videoFps;
+  if (Math.abs(factor - 1) < 0.005) {
+    return cues;
+  }
+  return cues.map((cue) => ({...cue, start: cue.start * factor, end: cue.end * factor}));
+}
+
+/** Text of every cue showing at `time` (cues sorted by start), joined by newlines. */
+export function cueTextAt(cues: Cue[], time: number): string {
+  let lo = 0;
+  let hi = cues.length - 1;
+  let last = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (cues[mid].start <= time) {
+      last = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  const lines: string[] = [];
+  // Overlapping cues are rare and short-lived; a few steps back is enough.
+  for (let i = last; i >= 0 && i > last - 8; i--) {
+    if (cues[i].end > time) {
+      lines.unshift(cues[i].text);
+    }
+  }
+  return lines.join('\n');
+}
+
 export function looksLikeSubtitles(input: string): boolean {
   return /-->/.test(input.slice(0, 4000));
 }

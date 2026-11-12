@@ -170,3 +170,142 @@ export function describeStream(stream: Stream): {title: string; detail: string} 
     detail: [kind, ...lines.slice(name ? 1 : 1)].join(' · '),
   };
 }
+
+export interface ProbeTrack {
+  track: 'video' | 'audio' | 'subtitle' | string;
+  codec?: string;
+  language?: string | null;
+  title?: string | null;
+  frameRate?: number;
+  width?: number;
+  height?: number;
+  isHdr?: boolean;
+  isDoVi?: boolean;
+  channels?: number;
+}
+
+export interface ProbeResult {
+  duration?: number;
+  streams: ProbeTrack[];
+}
+
+/** Asks the PC's Stremio server to inspect a media URL (ffprobe): tracks, languages, frame rate, HDR. */
+export async function probeMedia(server: string, mediaUrl: string, timeoutMs = 10000): Promise<ProbeResult | null> {
+  if (!server || !/^https?:\/\//i.test(mediaUrl)) {
+    return null;
+  }
+  try {
+    const data = await requestJson<{format?: {duration?: number}; streams?: ProbeTrack[]}>(
+      `${server}/hlsv2/probe?${query([['mediaURL', mediaUrl]])}`,
+      {timeoutMs},
+    );
+    return {duration: data.format?.duration, streams: Array.isArray(data.streams) ? data.streams : []};
+  } catch {
+    return null;
+  }
+}
+
+const ENGLISH_CODES = new Set(['eng', 'en', 'english']);
+
+/** Judges a probed file for this device: default audio language/codec and Dolby Vision without HDR10. */
+export function probeVerdict(probe: ProbeResult): {ok: boolean; reason?: string; frameRate?: number; audioLanguage?: string} {
+  const video = probe.streams.find((s) => s.track === 'video');
+  const audio = probe.streams.filter((s) => s.track === 'audio');
+  const first = audio[0];
+  const language = (first?.language || '').toLowerCase();
+  const frameRate = video?.frameRate && video.frameRate > 1 ? video.frameRate : undefined;
+  if (video?.isDoVi && !video.isHdr) {
+    return {ok: false, reason: 'Dolby Vision only', frameRate, audioLanguage: language};
+  }
+  if (first && /truehd|mlp/i.test(first.codec || '')) {
+    return {ok: false, reason: 'TrueHD audio', frameRate, audioLanguage: language};
+  }
+  // Vega plays the first audio track and cannot switch, so it must be English (or unlabelled).
+  if (first && language && language !== 'und' && !ENGLISH_CODES.has(language)) {
+    return {ok: false, reason: `${language} audio first`, frameRate, audioLanguage: language};
+  }
+  return {ok: true, frameRate, audioLanguage: language};
+}
+
+// ---------------------------------------------------------------------------
+// Finding the PC and checking streams before playback.
+
+/** True when `url` answers like a Stremio streaming server's /settings. */
+async function isStremioServer(base: string, timeoutMs: number): Promise<boolean> {
+  try {
+    const data = await requestJson<any>(`${base}/settings`, {timeoutMs});
+    return !!data && (Array.isArray(data.options) || typeof data.values === 'object');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Looks for a Stremio streaming server (port 11470) on common home subnets.
+ * Checks hosts in parallel batches; returns e.g. "http://192.168.1.242:11470".
+ */
+export async function discoverServer(log: (line: string) => void = () => undefined, subnets = ['192.168.1', '192.168.0', '10.0.0']): Promise<string> {
+  for (const subnet of subnets) {
+    log(`looking for Stremio on ${subnet}.x`);
+    const hosts = Array.from({length: 254}, (_, i) => `http://${subnet}.${i + 1}:11470`);
+    for (let i = 0; i < hosts.length; i += 48) {
+      const batch = hosts.slice(i, i + 48);
+      const results = await Promise.all(batch.map(async (base) => ((await isStremioServer(base, 1800)) ? base : '')));
+      const found = results.find(Boolean);
+      if (found) {
+        log(`found Stremio server at ${found}`);
+        return found;
+      }
+    }
+  }
+  log('no Stremio server found on the network');
+  return '';
+}
+
+export interface Preflight {
+  ok: boolean;
+  /** Address after redirects (handing this to the player avoids redirect-related seek failures). */
+  finalUrl: string;
+  reason?: string;
+}
+
+/**
+ * Asks for the first byte of a stream: fails fast on DNS/connection problems
+ * and returns the address after any redirects.
+ */
+export function preflightStream(url: string, timeoutMs = 5000): Promise<Preflight> {
+  // XMLHttpRequest rather than fetch: on Vega, fetch only resolves after the whole body
+  // arrives, while XHR reports status and the post-redirect URL as soon as headers land.
+  return new Promise((resolve) => {
+    let settled = false;
+    const xhr = new XMLHttpRequest();
+    const finish = (result: Preflight) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      try {
+        xhr.abort();
+      } catch {
+        // Already closed.
+      }
+      resolve(result);
+    };
+    const timer = setTimeout(() => finish({ok: false, finalUrl: url, reason: 'timed out'}), timeoutMs);
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState >= 2 && xhr.status > 0) {
+        const finalUrl = (xhr as any).responseURL || url;
+        finish(xhr.status >= 400 ? {ok: false, finalUrl, reason: `HTTP ${xhr.status}`} : {ok: true, finalUrl});
+      }
+    };
+    xhr.onerror = () => finish({ok: false, finalUrl: url, reason: 'network error'});
+    try {
+      xhr.open('GET', url);
+      xhr.setRequestHeader('Range', 'bytes=0-0');
+      xhr.send();
+    } catch (e: any) {
+      finish({ok: false, finalUrl: url, reason: String(e?.message || e)});
+    }
+  });
+}

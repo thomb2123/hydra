@@ -1,15 +1,16 @@
 // 10-foot UI tokens. The Vega TV surface is 1920x1080 logical pixels.
+// Matches the streaming-service look: near-black canvas, white focus, purple accent.
 export const colors = {
-  background: '#0d1014',
-  surface: '#171c22',
-  surfaceRaised: '#202731',
-  focus: '#f5c518',
-  focusText: '#0d1014',
-  text: '#f2f4f7',
-  textMuted: '#9aa4b2',
+  background: '#000000',
+  surface: '#16161a',
+  surfaceRaised: '#232329',
+  focus: '#ffffff',
+  focusText: '#000000',
+  text: '#ffffff',
+  textMuted: '#9a9aa3',
   accent: '#7b5cff',
   danger: '#ff6b6b',
-  ok: '#45d483',
+  ok: '#46d369',
 };
 
 export const spacing = {xs: 6, s: 12, m: 20, l: 32, xl: 56};

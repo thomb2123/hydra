@@ -18,6 +18,28 @@ proof-of-concept app that checks the platform behaviours the two apps depend on.
 
 `release/SHA256SUMS` holds the checksums.
 
+### Stremio app: streaming-service redesign (12 Nov 2026)
+
+Tested on a Fire TV Stick 4K Select (Vega OS 2.0) over Wi-Fi with a Real-Debrid
+account (AIOStreams, Comet), AIOMetadata, Trakt and Cinemeta add-ons.
+
+| Feature | Status on the stick |
+|---|---|
+| Launch intro, home with featured title, Top 10, Trending/New/Popular, genre and personal rows | ✅ seen on device |
+| Title page: Play/Resume, My List, Other versions, Remove from Continue Watching | ✅ seen on device |
+| Continue Watching and My List synced to the Stremio account | ✅ seen on device |
+| Automatic version choice (4K HDR10/HDR10+, Dolby Atmos, English audio; skips DV-only, TrueHD, blocked hosts, placeholder videos) | ✅ start in under 1 s after the title page has opened |
+| **In-app Matroska engine** (`shared/src/mkv/`): MKV is repackaged to fragmented MP4 and fed to MSE, keeping HEVC HDR10 and E-AC-3 Atmos | ✅ plays; output validated frame by frame with ffmpeg |
+| Fast-forward, rewind, resume on MKV debrid streams | ✅ 30 s jumps verified |
+| Built-in (in-file) subtitles chosen automatically, then OpenSubtitles ranked by release match and frame-rate corrected | ✅ seen on device |
+| Search with on-screen keyboard and live results | ✅ seen on device |
+| Server auto-discovery on the home network (for torrents and probing) | ✅ found the PC |
+
+Known limits: Vega's URL-mode player cannot seek in MKV over HTTP, which is why
+the in-app engine exists; MP4 and unsupported codecs still use URL mode without
+skipping. HLS/DASH still need Amazon's Shaka build. The PC's Stremio server is
+only needed for torrents and the pre-play audio-language probe.
+
 ---
 
 ## 1. What was found

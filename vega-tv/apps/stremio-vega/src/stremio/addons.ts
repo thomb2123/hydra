@@ -1,6 +1,6 @@
 // Stremio add-on protocol: resource matching and URL construction.
 // https://github.com/Stremio/stremio-addon-sdk/blob/master/docs/protocol.md
-import {requestJson} from '../../../../shared/src/net';
+import {hostOf, requestJson} from '../../../../shared/src/net';
 import {AddonDescriptor, CatalogDescriptor, Manifest, MetaDetail, MetaPreview, Stream, Subtitle} from './types';
 
 const LOCAL_SERVER = /^https?:\/\/(127\.0\.0\.1|localhost):11470/i;
@@ -159,13 +159,37 @@ export async function fetchStreams(addons: AddonDescriptor[], type: string, vide
   );
 }
 
-export async function fetchSubtitles(addons: AddonDescriptor[], type: string, videoId: string, extra?: Record<string, string>): Promise<Subtitle[]> {
-  const candidates = addons.filter((addon) => supportsResource(addon.manifest, 'subtitles', type, videoId));
+/**
+ * Stremio's official OpenSubtitles add-on. It is queried as well as the user's
+ * own subtitle add-ons, because community mirrors can be unreachable (for
+ * example blocked by a broadband provider's content filter).
+ */
+export const OFFICIAL_SUBTITLES_URL = 'https://opensubtitles-v3.strem.io/manifest.json';
+
+export interface SourcedSubtitle extends Subtitle {
+  /** Name of the add-on that listed this subtitle. */
+  source: string;
+}
+
+export async function fetchSubtitles(
+  addons: AddonDescriptor[],
+  type: string,
+  videoId: string,
+  extra?: Record<string, string>,
+): Promise<SourcedSubtitle[]> {
+  const candidates = addons
+    .filter((addon) => supportsResource(addon.manifest, 'subtitles', type, videoId))
+    .map((addon) => ({transportUrl: addon.transportUrl, name: addon.manifest.name || hostOf(addon.transportUrl)}));
+  const official = addonBase(OFFICIAL_SUBTITLES_URL);
+  const hasOfficial = candidates.some((c) => addonBase(c.transportUrl) === official);
+  if (!hasOfficial && (type === 'movie' || type === 'series') && /^tt\d+/.test(videoId)) {
+    candidates.unshift({transportUrl: OFFICIAL_SUBTITLES_URL, name: 'OpenSubtitles'});
+  }
   const lists = await Promise.all(
     candidates.map(async (addon) => {
       try {
         const data = await requestJson<{subtitles?: Subtitle[]}>(resourceUrl(addon.transportUrl, 'subtitles', type, videoId, extra), {timeoutMs: 20000});
-        return Array.isArray(data.subtitles) ? data.subtitles : [];
+        return Array.isArray(data.subtitles) ? data.subtitles.map((s) => ({...s, source: addon.name})) : [];
       } catch {
         return [];
       }

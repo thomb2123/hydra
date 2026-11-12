@@ -88,3 +88,58 @@ export function withProgress(item: LibraryItem, videoId: string | undefined, pos
   }
   return {...item, state, _mtime: now};
 }
+
+/**
+ * A new library item in the shape the official Stremio apps write.
+ * Watching something creates a "temp" item (Continue Watching only, removed
+ * from the visible library); adding to My List makes it a normal item.
+ */
+export function newLibraryItem(meta: {id: string; type: string; name: string; poster?: string | null; posterShape?: string}, inList: boolean): LibraryItem {
+  const now = new Date().toISOString();
+  return {
+    _id: meta.id,
+    name: meta.name,
+    type: meta.type,
+    poster: meta.poster || null,
+    posterShape: meta.posterShape || 'poster',
+    removed: !inList,
+    temp: !inList,
+    _ctime: now,
+    _mtime: now,
+    state: {
+      lastWatched: null,
+      timeWatched: 0,
+      timeOffset: 0,
+      overallTimeWatched: 0,
+      timesWatched: 0,
+      flaggedWatched: 0,
+      duration: 0,
+      video_id: null,
+      watched: null,
+      noNotif: false,
+    },
+    behaviorHints: {defaultVideoId: null, featuredVideoId: null, hasScheduledVideos: false},
+  };
+}
+
+/** True when the item shows in My List (the visible Stremio library). */
+export function isInList(item: LibraryItem | undefined): boolean {
+  return !!item && !item.removed && !item.temp;
+}
+
+/** Adds to or removes from My List, keeping any watch progress. */
+export function withListMembership(item: LibraryItem, inList: boolean): LibraryItem {
+  const now = new Date().toISOString();
+  const hasProgress = (item.state?.timeOffset || 0) > 0;
+  return {...item, removed: !inList, temp: inList ? false : hasProgress, _mtime: now};
+}
+
+/** Marks a title finished: clears the resume point so it leaves Continue Watching. */
+export function withFinished(item: LibraryItem): LibraryItem {
+  const now = new Date().toISOString();
+  return {
+    ...item,
+    state: {...item.state, timeOffset: 0, timesWatched: (item.state.timesWatched || 0) + 1, flaggedWatched: 1, lastWatched: now},
+    _mtime: now,
+  };
+}

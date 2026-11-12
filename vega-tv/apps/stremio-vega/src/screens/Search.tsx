@@ -1,75 +1,166 @@
-import React, {useMemo, useState} from 'react';
-import {FlatList, StyleSheet, Text, View} from 'react-native';
-import {FocusButton, PosterTile} from '../../../../shared/src/ui/FocusButton';
-import {TextField} from '../../../../shared/src/ui/TextField';
-import {colors, fonts, safeArea, spacing} from '../../../../shared/src/ui/theme';
+// Streaming-service style search: an on-screen keyboard on the left and live
+// results on the right (merged across every add-on that supports search), with
+// matching categories and popular titles before anything is typed.
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {FlatList, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {useBackHandler} from '../../../../shared/src/tv/remote';
-import {BoardCatalog, fetchCatalog, searchCatalogs} from '../stremio/addons';
+import {Pill, PosterCard} from '../ui/Cards';
+import {useRowItems} from '../ui/ContentRow';
+import {brand, edge, type} from '../ui/brand';
+import {fetchCatalog, searchCatalogs} from '../stremio/addons';
+import {allGenres, rowsForTab} from '../stremio/rows';
 import {MetaPreview} from '../stremio/types';
 import {StremioState} from '../state';
 
-type Result = {row: BoardCatalog; metas: MetaPreview[]};
+export interface SearchProps {
+  state: StremioState;
+  openMeta: (type: string, id: string, preview?: MetaPreview) => void;
+  openGenre: (genre: string) => void;
+  onBack: () => void;
+}
 
-export const Search = ({state, openMeta, onBack}: {state: StremioState; openMeta: (type: string, id: string, preview?: MetaPreview) => void; onBack: () => void}) => {
+const KEYS = 'abcdefghijklmnopqrstuvwxyz1234567890'.split('');
+
+const Key = ({label, onPress, wide, preferred}: {label: string; onPress: () => void; wide?: boolean; preferred?: boolean}) => {
+  const [focused, setFocused] = useState(false);
+  return (
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      activeOpacity={1}
+      hasTVPreferredFocus={preferred}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={[styles.key, wide && styles.keyWide, focused && styles.keyFocused]}>
+      <Text style={[styles.keyText, focused && styles.keyTextFocused]}>{label}</Text>
+    </TouchableOpacity>
+  );
+};
+
+const resultCache = new Map<string, MetaPreview[]>();
+
+export const Search = ({state, openMeta, openGenre, onBack}: SearchProps) => {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Result[] | null>(null);
+  const [results, setResults] = useState<MetaPreview[] | null>(null);
   const [searching, setSearching] = useState(false);
   const catalogs = useMemo(() => searchCatalogs(state.addons).slice(0, 8), [state.addons]);
+  const genres = useMemo(() => allGenres(state.addons), [state.addons]);
+  const popularRow = useMemo(() => rowsForTab('home', state.addons)[0], [state.addons]);
+  const popular = useRowItems(popularRow || ({key: 'none', title: '', kind: 'other', type: 'movie', source: null, items: []} as any));
+  const runId = useRef(0);
 
   useBackHandler(() => {
     onBack();
     return true;
   });
 
-  const run = async () => {
-    const text = query.trim();
-    if (!text) {
+  const text = query.trim();
+  const genreMatches = text.length >= 2 ? genres.filter((g) => g.toLowerCase().startsWith(text.toLowerCase()) || g.toLowerCase().includes(` ${text.toLowerCase()}`)).slice(0, 4) : [];
+
+  // Live search, debounced while typing; results cached per query.
+  useEffect(() => {
+    if (text.length < 2) {
+      setResults(null);
+      setSearching(false);
       return;
     }
+    const key = text.toLowerCase();
+    if (resultCache.has(key)) {
+      setResults(resultCache.get(key) || []);
+      return;
+    }
+    const id = ++runId.current;
     setSearching(true);
-    const found = await Promise.all(
-      catalogs.map(async (row) => ({row, metas: await fetchCatalog(row, {search: text}).catch(() => [] as MetaPreview[])})),
-    );
-    setResults(found.filter((r) => r.metas.length));
-    setSearching(false);
-  };
+    const timer = setTimeout(async () => {
+      const found = await Promise.all(catalogs.map(async (row) => ({type: row.catalog.type, metas: await fetchCatalog(row, {search: text}).catch(() => [] as MetaPreview[])})));
+      if (id !== runId.current) {
+        return;
+      }
+      const seen = new Set<string>();
+      const merged: MetaPreview[] = [];
+      // Interleave add-ons' results so the best match of each comes first.
+      const lists = found.map((f) => f.metas.filter((m) => m.type === 'movie' || m.type === 'series' || !m.type).map((m) => ({...m, type: m.type || f.type})));
+      for (let i = 0; i < 40; i++) {
+        for (const list of lists) {
+          const m = list[i];
+          if (m && !seen.has(m.id)) {
+            seen.add(m.id);
+            merged.push(m);
+          }
+        }
+      }
+      resultCache.set(key, merged);
+      setResults(merged);
+      setSearching(false);
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [text, catalogs]);
+
+  const type_ = useCallback((ch: string) => setQuery((q) => (q + ch).slice(0, 40)), []);
+  const items = results ?? (popular || []);
+  const heading = results ? (results.length ? `Results for "${text}"` : searching ? 'Searching…' : `No results for "${text}"`) : 'Popular right now';
 
   return (
     <View style={styles.root}>
-      <Text style={styles.title}>Search</Text>
-      <View style={styles.bar}>
-        <TextField label="Title (press OK to type)" value={query} onChangeText={setQuery} onSubmit={run} hasTVPreferredFocus />
-        <FocusButton label={searching ? 'Searching…' : 'Search'} onPress={run} disabled={searching} />
-        <FocusButton label="Back" compact onPress={onBack} />
+      <View style={styles.left}>
+        <View style={styles.queryBox}>
+          <Text style={[styles.query, !query && styles.placeholder]} numberOfLines={1}>
+            {query || 'Search titles, people, genres'}
+          </Text>
+          <View style={styles.caret} />
+        </View>
+        <View style={styles.keyboard}>
+          {KEYS.map((k, i) => (
+            <Key key={k} label={k.toUpperCase()} preferred={i === 0} onPress={() => type_(k)} />
+          ))}
+          <Key label="Space" wide onPress={() => type_(' ')} />
+          <Key label="Delete" wide onPress={() => setQuery((q) => q.slice(0, -1))} />
+          <Key label="Clear" wide onPress={() => setQuery('')} />
+        </View>
+        {catalogs.length === 0 ? <Text style={styles.muted}>None of your add-ons support search.</Text> : null}
       </View>
-      {catalogs.length === 0 ? <Text style={styles.muted}>None of your add-ons support search.</Text> : null}
-      {results && results.length === 0 ? <Text style={styles.muted}>No results.</Text> : null}
-      <FlatList
-        data={results || []}
-        keyExtractor={(r) => `${r.row.addon.transportUrl}|${r.row.catalog.type}|${r.row.catalog.id}`}
-        renderItem={({item}) => (
-          <View style={styles.row}>
-            <Text style={styles.rowTitle}>{item.row.title}</Text>
-            <FlatList
-              horizontal
-              data={item.metas}
-              keyExtractor={(m) => m.id}
-              renderItem={({item: meta}) => (
-                <PosterTile title={meta.name} caption={meta.releaseInfo} image={meta.poster} onPress={() => openMeta(meta.type || item.row.catalog.type, meta.id, meta)} />
-              )}
-            />
+
+      <View style={styles.right}>
+        {genreMatches.length ? (
+          <View style={styles.genres}>
+            {genreMatches.map((g) => (
+              <Pill key={g} label={g} onPress={() => openGenre(g)} />
+            ))}
           </View>
-        )}
-      />
+        ) : null}
+        <Text style={styles.heading}>{heading}</Text>
+        <FlatList
+          data={items}
+          numColumns={5}
+          keyExtractor={(m) => m.id}
+          initialNumToRender={10}
+          windowSize={3}
+          removeClippedSubviews
+          contentContainerStyle={styles.grid}
+          renderItem={({item}) => <PosterCard meta={item} onPress={() => openMeta(item.type || 'movie', item.id, item)} />}
+        />
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  root: {flex: 1, backgroundColor: colors.background, paddingHorizontal: safeArea.horizontal, paddingVertical: safeArea.vertical},
-  title: {color: colors.text, fontSize: fonts.title, fontWeight: '800'},
-  bar: {flexDirection: 'row', alignItems: 'flex-end'},
-  muted: {color: colors.textMuted, fontSize: fonts.small, marginTop: spacing.s},
-  row: {marginTop: spacing.m},
-  rowTitle: {color: colors.text, fontSize: fonts.body, fontWeight: '700', marginBottom: spacing.s},
+  root: {flex: 1, flexDirection: 'row', backgroundColor: brand.background, paddingTop: 50},
+  left: {width: 640, paddingLeft: edge, paddingRight: 30},
+  queryBox: {flexDirection: 'row', alignItems: 'center', height: 70, borderBottomWidth: 3, borderBottomColor: brand.accent, marginBottom: 26},
+  query: {color: brand.text, fontSize: 38, fontWeight: '700', flexShrink: 1},
+  placeholder: {color: brand.textMuted, fontSize: 28, fontWeight: '500'},
+  caret: {width: 3, height: 40, backgroundColor: brand.text, marginLeft: 4},
+  keyboard: {flexDirection: 'row', flexWrap: 'wrap', width: 540},
+  key: {width: 80, height: 68, margin: 5, borderRadius: 6, backgroundColor: brand.surface, justifyContent: 'center', alignItems: 'center'},
+  keyWide: {width: 170},
+  keyFocused: {backgroundColor: brand.text, transform: [{scale: 1.08}]},
+  keyText: {color: brand.text, fontSize: type.body, fontWeight: '700'},
+  keyTextFocused: {color: '#000'},
+  right: {flex: 1, paddingRight: 40},
+  genres: {flexDirection: 'row', marginBottom: 16},
+  heading: {color: brand.text, fontSize: type.heading, fontWeight: '800', marginLeft: 12, marginBottom: 6},
+  grid: {paddingBottom: 120},
+  muted: {color: brand.textMuted, fontSize: type.small, marginTop: 20},
 });

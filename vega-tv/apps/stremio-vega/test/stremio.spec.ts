@@ -2,6 +2,7 @@ import {addonBase, boardCatalogs, encodeExtra, resourceUrl, searchCatalogs, supp
 import {describeStream, normaliseServerUrl, parseMagnet, proxyUrl, subtitleViaServer, torrentUrl} from '../src/stremio/streaming';
 import {withProgress} from '../src/stremio/api';
 import {AddonDescriptor, LibraryItem, Manifest} from '../src/stremio/types';
+import {cueTextAt, looksLikeSubtitles, parseSubtitles} from '../../../shared/src/subtitles';
 
 const cinemeta: Manifest = {
   id: 'com.linvo.cinemeta',
@@ -130,5 +131,23 @@ describe('library progress', () => {
     expect(updated.state.timesWatched).toBe(1);
     expect(updated.name).toBe('Film');
     expect(updated._mtime).not.toBe(item._mtime);
+  });
+});
+
+describe('subtitles', () => {
+  const cues = parseSubtitles('WEBVTT\n\n1\n00:00:01.000 --> 00:00:03.000\nHello\n\n2\n00:00:02.500 --> 00:00:04.000\nWorld\n\n3\n00:00:10,000 --> 00:00:11,000\n<i>Later</i>\n');
+
+  it('finds the cue text showing at a time, including overlaps', () => {
+    expect(cueTextAt(cues, 0.5)).toBe('');
+    expect(cueTextAt(cues, 1.5)).toBe('Hello');
+    expect(cueTextAt(cues, 2.7)).toBe('Hello\nWorld');
+    expect(cueTextAt(cues, 5)).toBe('');
+    expect(cueTextAt(cues, 10.2)).toBe('Later');
+    expect(cueTextAt([], 1)).toBe('');
+  });
+
+  it('rejects HTML pages served instead of subtitles', () => {
+    expect(looksLikeSubtitles('<html><body>This site is blocked</body></html>')).toBe(false);
+    expect(looksLikeSubtitles('1\n00:00:01,000 --> 00:00:02,000\nHi')).toBe(true);
   });
 });

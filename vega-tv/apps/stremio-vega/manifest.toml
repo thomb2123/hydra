@@ -1,7 +1,7 @@
 schema-version = 1
 
 [package]
-title = "Stremio (Vega)"
+title = "Stremio"
 version = "0.1.0"
 build-number = 1
 id = "dev.vegatv.stremio"

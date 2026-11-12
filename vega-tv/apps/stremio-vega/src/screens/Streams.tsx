@@ -3,9 +3,11 @@ import {FlatList, StyleSheet, Text, View} from 'react-native';
 import {FocusButton} from '../../../../shared/src/ui/FocusButton';
 import {colors, fonts, safeArea, spacing} from '../../../../shared/src/ui/theme';
 import {useBackHandler} from '../../../../shared/src/tv/remote';
-import {ExternalSubtitle, PlaySource} from '../../../../shared/src/player/VideoScreen';
-import {StreamGroup, fetchStreams, fetchSubtitles} from '../stremio/addons';
-import {describeStream, resolveStream, subtitleViaServer} from '../stremio/streaming';
+import {PlaySource} from '../../../../shared/src/player/VideoScreen';
+import {StreamGroup, fetchStreams} from '../stremio/addons';
+import {describeStream} from '../stremio/streaming';
+import {prepareSource, videoIdOf} from '../stremio/playback';
+import {analyseStream, summarise} from '../stremio/streamPicker';
 import {MetaDetail, Stream, Video} from '../stremio/types';
 import {StremioState} from '../state';
 
@@ -19,15 +21,8 @@ export interface StreamsProps {
 
 type Row = {key: string; header?: string; stream?: Stream; addonName?: string; error?: string};
 
-const LANGUAGE_ORDER = ['eng', 'en', 'english'];
-
-function languageRank(lang: string): number {
-  const index = LANGUAGE_ORDER.indexOf(String(lang).toLowerCase());
-  return index === -1 ? 10 : index;
-}
-
 export const Streams = ({state, meta, video, onPlay, onBack}: StreamsProps) => {
-  const videoId = video ? video.id : meta.behaviorHints?.defaultVideoId || meta.id;
+  const videoId = videoIdOf(meta, video);
   const [groups, setGroups] = useState<StreamGroup[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -63,48 +58,8 @@ export const Streams = ({state, meta, video, onPlay, onBack}: StreamsProps) => {
     setMessage(null);
     setBusy('Preparing stream…');
     try {
-      const episode = video ? {season: video.season, episode: video.episode} : undefined;
-      const resolved = await resolveStream(stream, state.server, episode);
-      setBusy('Looking for subtitles…');
-      const hints = stream.behaviorHints || {};
-      const extra: Record<string, string> = {};
-      if (hints.videoHash) {
-        extra.videoHash = hints.videoHash;
-      }
-      if (hints.videoSize) {
-        extra.videoSize = String(hints.videoSize);
-      }
-      if (hints.filename) {
-        extra.filename = hints.filename;
-      }
-      const fromAddons = await fetchSubtitles(state.addons, meta.type, videoId, Object.keys(extra).length ? extra : undefined).catch(() => []);
-      const all = [...(stream.subtitles || []), ...fromAddons]
-        .sort((a, b) => languageRank(a.lang) - languageRank(b.lang))
-        .slice(0, 40);
-      const subtitles: ExternalSubtitle[] = all.map((sub, index) => ({
-        id: `${sub.id || index}-${index}`,
-        label: `${sub.lang || 'Unknown'}${sub.id ? ' · ' + String(sub.id).slice(0, 18) : ''}`,
-        language: sub.lang,
-        url: state.server ? subtitleViaServer(state.server, sub.url) : sub.url,
-      }));
-      const resume = state.resume[videoId];
-      const libraryItem = state.library.find((item) => item._id === meta.id);
-      let startAt = resume && resume.position > 30 && (!resume.duration || resume.position < resume.duration - 60) ? resume.position : 0;
-      if (!startAt && libraryItem && libraryItem.state.video_id === videoId && (libraryItem.state.timeOffset || 0) > 30000) {
-        startAt = (libraryItem.state.timeOffset || 0) / 1000;
-      }
-      const label = describeStream(stream);
-      onPlay(
-        {
-          url: resolved.url,
-          title: video ? `${meta.name} · ${video.season != null ? `S${video.season}E${video.episode} ` : ''}${video.title || video.name || ''}` : meta.name,
-          detail: `${label.title}${resolved.note ? ' · ' + resolved.note : ''}`,
-          subtitles,
-          startAt,
-        },
-        meta.id,
-        videoId,
-      );
+      const traits = analyseStream(stream);
+      onPlay(await prepareSource(state, meta, video, stream, summarise(traits) || describeStream(stream).title), meta.id, videoId);
     } catch (e: any) {
       setMessage(String(e?.message || e));
     } finally {
