@@ -47,6 +47,11 @@ export interface VideoScreenProps {
   onProgress?: (position: number, duration: number) => void;
   /** Lets a caller log diagnostics (the proof-of-concept app shows them on screen). */
   onLog?: (line: string) => void;
+  /**
+   * Live TV zapping: when set, ▲/▼ and Channel +/- switch channel (step +1/-1)
+   * and the Menu (☰) key opens the audio/subtitle menu instead.
+   */
+  onZap?: (step: number) => void;
 }
 
 type MenuEntry = {key: string; label: string; selected: boolean; apply: () => void};
@@ -95,7 +100,7 @@ function listOf<T>(list: any): T[] {
   return out;
 }
 
-export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog}: VideoScreenProps) => {
+export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap}: VideoScreenProps) => {
   const playerRef = useRef<VideoPlayer | null>(null);
   const adaptiveRef = useRef<AdaptiveSession | null>(null);
   const surfaceRef = useRef<string | null>(null);
@@ -491,9 +496,26 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog}: VideoS
       case 'skip_forward':
         seekBy(30);
         break;
+      case 'channel_up':
+        if (onZap) {
+          onZap(1);
+        }
+        break;
+      case 'channel_down':
+        if (onZap) {
+          onZap(-1);
+        }
+        break;
       case 'up':
       case 'down':
+        if (onZap) {
+          onZap(key === 'up' ? -1 : 1);
+        } else {
+          openMenu();
+        }
+        break;
       case 'menu':
+      case 'context_menu':
         openMenu();
         break;
       default:
@@ -545,7 +567,9 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog}: VideoS
             <Text style={styles.live}>● LIVE</Text>
           )}
           <Text style={styles.hint}>
-            {paused ? 'OK: play' : 'OK: pause'} · ◀ ▶ 10 s · ⏪ ⏩ 30 s · ▲▼ audio & subtitles · Back: close
+            {onZap
+              ? `${paused ? 'OK: play' : 'OK: pause'} · ▲▼ change channel · ☰ audio & subtitles · Back: close`
+              : `${paused ? 'OK: play' : 'OK: pause'} · ◀ ▶ 10 s · ⏪ ⏩ 30 s · ▲▼ audio & subtitles · Back: close`}
           </Text>
         </View>
       ) : null}

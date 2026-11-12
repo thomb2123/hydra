@@ -1,0 +1,7 @@
+# Optional: copy to %UserProfile%\.wslconfig, then run "wsl --shutdown".
+# Mirrored networking (Windows 11 22H2+) lets WSL share the PC's network
+# interfaces, which avoids NAT surprises when talking to the Fire TV stick.
+# Outbound connections to the stick (vda connect <ip>:5555) also work in the
+# default NAT mode, so this is only needed if connecting fails.
+[wsl2]
+networkingMode=mirrored

@@ -17,6 +17,7 @@ export interface RequestOptions {
   body?: unknown;
   headers?: Record<string, string>;
   timeoutMs?: number;
+  credentials?: 'omit' | 'same-origin' | 'include';
 }
 
 export interface RawResponse {
@@ -43,6 +44,7 @@ export async function request(url: string, options: RequestOptions = {}): Promis
       headers,
       body,
       signal: controller.signal,
+      ...(options.credentials ? {credentials: options.credentials} : {}),
     });
     const text = await response.text();
     const responseHeaders: Record<string, string> = {};

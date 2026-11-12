@@ -1,0 +1,51 @@
+schema-version = 1
+
+[package]
+title = "FlixNest (Vega)"
+version = "0.1.0"
+build-number = 1
+id = "dev.vegatv.flixnest"
+icon = "@image/icon.png"
+
+[os.version]
+min = "2.0"
+target = "2.0"
+
+[needs]
+[components]
+[[components.interactive]]
+id = "dev.vegatv.flixnest.main"
+runtime-module = "/com.amazon.kepler.keplerscript.runtime.loader_2@IKeplerScript_2_0"
+launch-type = "singleton"
+categories = ["com.amazon.category.main"]
+
+# Media services required by @amazon-devices/react-native-w3cmedia
+# (Amazon docs: "Media Player Setup").
+[wants]
+[[wants.service]]
+id = "com.amazon.mediametrics.service"
+
+[[wants.privilege]]
+id = "com.amazon.devconf.privilege.accessibility"
+
+[[wants.service]]
+id = "com.amazon.mediabuffer.service"
+
+[[wants.service]]
+id = "com.amazon.mediatransform.service"
+
+[[wants.service]]
+id = "com.amazon.audio.stream"
+
+[[wants.service]]
+id = "com.amazon.audio.control"
+
+[[wants.service]]
+id = "com.amazon.media.server"
+
+[[wants.service]]
+id = "com.amazon.media.playersession.service"
+
+# On-screen keyboard for text fields.
+[[wants.service]]
+id = "com.amazon.inputmethod.service"
