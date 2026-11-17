@@ -63,6 +63,8 @@ export interface VideoScreenProps {
   onZap?: (step: number) => void;
   /** Called instead of showing an error when this source fails before it starts playing. */
   onFailed?: (reason: string) => void;
+  /** Called once, when this source first starts playing. */
+  onStarted?: () => void;
   /** Shows a "Next Episode" button and plays it automatically at the end. */
   onNext?: () => void;
   nextLabel?: string;
@@ -276,7 +278,7 @@ const PanelRow = ({label, selected, onPress, preferred}: {label: string; selecte
 
 // ---------------------------------------------------------------------------
 
-export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, onFailed, onNext, nextLabel, preferredSubtitle, onSubtitleChosen, onRouteSwitched}: VideoScreenProps) => {
+export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, onFailed, onStarted, onNext, nextLabel, preferredSubtitle, onSubtitleChosen, onRouteSwitched}: VideoScreenProps) => {
   const autoSubDone = useRef(false);
   const mkvRef = useRef<MkvSession | null>(null);
   const [embedded, setEmbeddedState] = useState<EmbeddedSubtitleTrack[]>([]);
@@ -298,6 +300,8 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
   const failedRef = useRef(false);
   const onFailedRef = useRef(onFailed);
   onFailedRef.current = onFailed;
+  const onStartedRef = useRef(onStarted);
+  onStartedRef.current = onStarted;
   const lastProgressRef = useRef(0);
 
   // Seeking.
@@ -621,6 +625,9 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       setDuration(Number.isFinite(d) ? d : 0);
     });
     on('playing', () => {
+      if (!startedRef.current) {
+        onStartedRef.current?.();
+      }
       startedRef.current = true;
       if (watchdog) {
         clearTimeout(watchdog);

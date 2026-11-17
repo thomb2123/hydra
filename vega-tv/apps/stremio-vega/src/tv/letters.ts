@@ -1,0 +1,21 @@
+// Generated from the Unicode database (NFKC compatibility mappings plus small
+// capitals): decorative letters IPTV providers put in names, e.g. "ᴿᴬᵂ", "ᵁᴴᴰ",
+// "⁸ᴷ", "ʰᵉᵛᶜ", mapped to plain ASCII. Pairs: decorated char, then its letter.
+// Kept as data so it works without relying on the JS engine's Unicode tables.
+const PAIRS = "ʰhʲjʳrʷwʸyˡlˢsˣxᴬAᴮBᴰDᴱEᴳGᴴHᴵIᴶJᴷKᴸLᴹMᴺNᴼOᴾPᴿRᵀTᵁUᵂWᵃaᵇbᵈdᵉeᵍgᵏkᵐmᵒoᵖpᵗtᵘuᵛvᵢiᵣrᵤuᵥvᶜcᶠfᶻz⁰0ⁱi⁴4⁵5⁶6⁷7⁸8⁹9ⁿn₀0₁1₂2₃3₄4₅5₆6₇7₈8₉9ₐaₑeₒoₓxₕhₖkₗlₘmₙnₚpₛsₜtⱼjⱽVꟲCꟳFꟴQ𝐀A𝐁B𝐂C𝐃D𝐄E𝐅F𝐆G𝐇H𝐈I𝐉J𝐊K𝐋L𝐌M𝐍N𝐎O𝐏P𝐐Q𝐑R𝐒S𝐓T𝐔U𝐕V𝐖W𝐗X𝐘Y𝐙Z𝐚a𝐛b𝐜c𝐝d𝐞e𝐟f𝐠g𝐡h𝐢i𝐣j𝐤k𝐥l𝐦m𝐧n𝐨o𝐩p𝐪q𝐫r𝐬s𝐭t𝐮u𝐯v𝐰w𝐱x𝐲y𝐳z𝐴A𝐵B𝐶C𝐷D𝐸E𝐹F𝐺G𝐻H𝐼I𝐽J𝐾K𝐿L𝑀M𝑁N𝑂O𝑃P𝑄Q𝑅R𝑆S𝑇T𝑈U𝑉V𝑊W𝑋X𝑌Y𝑍Z𝑎a𝑏b𝑐c𝑑d𝑒e𝑓f𝑔g𝑖i𝑗j𝑘k𝑙l𝑚m𝑛n𝑜o𝑝p𝑞q𝑟r𝑠s𝑡t𝑢u𝑣v𝑤w𝑥x𝑦y𝑧z𝑨A𝑩B𝑪C𝑫D𝑬E𝑭F𝑮G𝑯H𝑰I𝑱J𝑲K𝑳L𝑴M𝑵N𝑶O𝑷P𝑸Q𝑹R𝑺S𝑻T𝑼U𝑽V𝑾W𝑿X𝒀Y𝒁Z𝒂a𝒃b𝒄c𝒅d𝒆e𝒇f𝒈g𝒉h𝒊i𝒋j𝒌k𝒍l𝒎m𝒏n𝒐o𝒑p𝒒q𝒓r𝒔s𝒕t𝒖u𝒗v𝒘w𝒙x𝒚y𝒛z𝒜A𝒞C𝒟D𝒢G𝒥J𝒦K𝒩N𝒪O𝒫P𝒬Q𝒮S𝒯T𝒰U𝒱V𝒲W𝒳X𝒴Y𝒵Z𝒶a𝒷b𝒸c𝒹d𝒻f𝒽h𝒾i𝒿j𝓀k𝓁l𝓂m𝓃n𝓅p𝓆q𝓇r𝓈s𝓉t𝓊u𝓋v𝓌w𝓍x𝓎y𝓏z𝓐A𝓑B𝓒C𝓓D𝓔E𝓕F𝓖G𝓗H𝓘I𝓙J𝓚K𝓛L𝓜M𝓝N𝓞O𝓟P𝓠Q𝓡R𝓢S𝓣T𝓤U𝓥V𝓦W𝓧X𝓨Y𝓩Z𝓪a𝓫b𝓬c𝓭d𝓮e𝓯f𝓰g𝓱h𝓲i𝓳j𝓴k𝓵l𝓶m𝓷n𝓸o𝓹p𝓺q𝓻r𝓼s𝓽t𝓾u𝓿v𝔀w𝔁x𝔂y𝔃z𝔄A𝔅B𝔇D𝔈E𝔉F𝔊G𝔍J𝔎K𝔏L𝔐M𝔑N𝔒O𝔓P𝔔Q𝔖S𝔗T𝔘U𝔙V𝔚W𝔛X𝔜Y𝔞a𝔟b𝔠c𝔡d𝔢e𝔣f𝔤g𝔥h𝔦i𝔧j𝔨k𝔩l𝔪m𝔫n𝔬o𝔭p𝔮q𝔯r𝔰s𝔱t𝔲u𝔳v𝔴w𝔵x𝔶y𝔷z𝔸A𝔹B𝔻D𝔼E𝔽F𝔾G𝕀I𝕁J𝕂K𝕃L𝕄M𝕆O𝕊S𝕋T𝕌U𝕍V𝕎W𝕏X𝕐Y𝕒a𝕓b𝕔c𝕕d𝕖e𝕗f𝕘g𝕙h𝕚i𝕛j𝕜k𝕝l𝕞m𝕟n𝕠o𝕡p𝕢q𝕣r𝕤s𝕥t𝕦u𝕧v𝕨w𝕩x𝕪y𝕫z𝕬A𝕭B𝕮C𝕯D𝕰E𝕱F𝕲G𝕳H𝕴I𝕵J𝕶K𝕷L𝕸M𝕹N𝕺O𝕻P𝕼Q𝕽R𝕾S𝕿T𝖀U𝖁V𝖂W𝖃X𝖄Y𝖅Z𝖆a𝖇b𝖈c𝖉d𝖊e𝖋f𝖌g𝖍h𝖎i𝖏j𝖐k𝖑l𝖒m𝖓n𝖔o𝖕p𝖖q𝖗r𝖘s𝖙t𝖚u𝖛v𝖜w𝖝x𝖞y𝖟z𝖠A𝖡B𝖢C𝖣D𝖤E𝖥F𝖦G𝖧H𝖨I𝖩J𝖪K𝖫L𝖬M𝖭N𝖮O𝖯P𝖰Q𝖱R𝖲S𝖳T𝖴U𝖵V𝖶W𝖷X𝖸Y𝖹Z𝖺a𝖻b𝖼c𝖽d𝖾e𝖿f𝗀g𝗁h𝗂i𝗃j𝗄k𝗅l𝗆m𝗇n𝗈o𝗉p𝗊q𝗋r𝗌s𝗍t𝗎u𝗏v𝗐w𝗑x𝗒y𝗓z𝗔A𝗕B𝗖C𝗗D𝗘E𝗙F𝗚G𝗛H𝗜I𝗝J𝗞K𝗟L𝗠M𝗡N𝗢O𝗣P𝗤Q𝗥R𝗦S𝗧T𝗨U𝗩V𝗪W𝗫X𝗬Y𝗭Z𝗮a𝗯b𝗰c𝗱d𝗲e𝗳f𝗴g𝗵h𝗶i𝗷j𝗸k𝗹l𝗺m𝗻n𝗼o𝗽p𝗾q𝗿r𝘀s𝘁t𝘂u𝘃v𝘄w𝘅x𝘆y𝘇z𝘈A𝘉B𝘊C𝘋D𝘌E𝘍F𝘎G𝘏H𝘐I𝘑J𝘒K𝘓L𝘔M𝘕N𝘖O𝘗P𝘘Q𝘙R𝘚S𝘛T𝘜U𝘝V𝘞W𝘟X𝘠Y𝘡Z𝘢a𝘣b𝘤c𝘥d𝘦e𝘧f𝘨g𝘩h𝘪i𝘫j𝘬k𝘭l𝘮m𝘯n𝘰o𝘱p𝘲q𝘳r𝘴s𝘵t𝘶u𝘷v𝘸w𝘹x𝘺y𝘻z𝘼A𝘽B𝘾C𝘿D𝙀E𝙁F𝙂G𝙃H𝙄I𝙅J𝙆K𝙇L𝙈M𝙉N𝙊O𝙋P𝙌Q𝙍R𝙎S𝙏T𝙐U𝙑V𝙒W𝙓X𝙔Y𝙕Z𝙖a𝙗b𝙘c𝙙d𝙚e𝙛f𝙜g𝙝h𝙞i𝙟j𝙠k𝙡l𝙢m𝙣n𝙤o𝙥p𝙦q𝙧r𝙨s𝙩t𝙪u𝙫v𝙬w𝙭x𝙮y𝙯z𝙰A𝙱B𝙲C𝙳D𝙴E𝙵F𝙶G𝙷H𝙸I𝙹J𝙺K𝙻L𝙼M𝙽N𝙾O𝙿P𝚀Q𝚁R𝚂S𝚃T𝚄U𝚅V𝚆W𝚇X𝚈Y𝚉Z𝚊a𝚋b𝚌c𝚍d𝚎e𝚏f𝚐g𝚑h𝚒i𝚓j𝚔k𝚕l𝚖m𝚗n𝚘o𝚙p𝚚q𝚛r𝚜s𝚝t𝚞u𝚟v𝚠w𝚡x𝚢y𝚣z𝟎0𝟏1𝟐2𝟑3𝟒4𝟓5𝟔6𝟕7𝟖8𝟗9𝟘0𝟙1𝟚2𝟛3𝟜4𝟝5𝟞6𝟟7𝟠8𝟡9𝟢0𝟣1𝟤2𝟥3𝟦4𝟧5𝟨6𝟩7𝟪8𝟫9𝟬0𝟭1𝟮2𝟯3𝟰4𝟱5𝟲6𝟳7𝟴8𝟵9𝟶0𝟷1𝟸2𝟹3𝟺4𝟻5𝟼6𝟽7𝟾8𝟿9０0１1２2３3４4５5６6７7８8９9ＡAＢBＣCＤDＥEＦFＧGＨHＩIＪJＫKＬLＭMＮNＯOＰPＱQＲRＳSＴTＵUＶVＷWＸXＹYＺZａaｂbｃcｄdｅeｆfｇgｈhｉiｊjｋkｌlｍmｎnｏoｐpｑqｒrｓsｔtｕuｖvｗwｘxｙyｚzᴀAᴃBᴄCᴅDᴇEᴊJᴋKᴍMᴎNᴏOᴐOᴘPᴙRᴚRᴛTᴜUᴠVᴡWᴢZʙBɢGʜHɪIʟLɴNʀRʏY¹1²2³3";
+
+const MAP: Record<string, string> = {};
+{
+  const chars = Array.from(PAIRS);
+  for (let i = 0; i + 1 < chars.length; i += 2) {
+    MAP[chars[i]] = chars[i + 1];
+  }
+}
+
+export function plainLetters(input: string): string {
+  let out = '';
+  for (const ch of Array.from(input)) {
+    out += MAP[ch] ?? ch;
+  }
+  return out;
+}

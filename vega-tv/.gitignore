@@ -3,3 +3,4 @@ build/
 buildinfo.json
 .tmp/
 *.log
+shared/src/player/shaka/vendor/

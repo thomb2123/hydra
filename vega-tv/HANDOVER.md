@@ -65,6 +65,48 @@ The Stremio app (`apps/stremio-vega`) was redesigned and tested on the stick:
   with frame-rate correction (`subtitlePick.ts`, `shared/src/subtitles.ts`).
 - Debrid streams play with the PC off. Torrents need the PC.
 
+## Live TV in the Stremio app (built 17 Nov, not yet tested on the stick)
+
+The owner asked for FlixNest's TV inside the Stremio app:
+- only real UK and US channels, in correct categories and order;
+- no duplicates, the best quality, clean names and a real now/next guide;
+- live sport (football, Champions League, boxing, UFC, F1).
+
+How it's built:
+- **Back end:** the FlixNest web-player API (`src/tv/flixnest.ts`), signed in by
+  phone pairing on the TV. Account access works without a cookie. Channel ids
+  carry their provider (`dream4k:channel:123`), so any source plays without
+  switching provider.
+- **Providers on the account:** Trex, Strong8K, Dream 4K, DINO IPTV and
+  Neo 4K Pro, about 190k entries in total.
+- **Curated line-up:** `src/tv/lineup.ts` lists 142 channels in 11 categories
+  (UK Entertainment, Drama & Crime, Sport, Films, News, Documentaries; US
+  Networks, Entertainment & Drama, Sport, Films, News).
+- **Matching:** `src/tv/normalize.ts` and `letters.ts` turn provider names
+  (prefixes, superscript tags like ᵁᴴᴰ/ᴿᴬᵂ) into keys and a quality score.
+  `channels.ts` merges up to 8 sources per channel; reliability learned on the
+  stick demotes sources that fail. Against the real lists (17 Nov) all **142/142**
+  channels matched, each from 2–5 providers.
+- **Building the guide on the stick (`guide.ts`):** only useful UK/US categories
+  are downloaded, about 11k entries in ~110 pages of 100 (FlixNest's page limit).
+  It's cached and rebuilt in the background daily.
+- **Now/next (`epg.ts`):** up to 3 sources are asked, and the majority title wins,
+  because providers attach wrong guides (e.g. Sky Sports News on "Main Event").
+- **Live Sport (`events.ts`):** FlixNest events kept only when they are English
+  fixtures on a UK/US sports channel or UK/US PPV feed. Placeholders ("Next
+  Event…"), replays and mis-tagged shows are dropped.
+- **UI:** a "Live TV" tab (`screens/TvGuide.tsx`) with categories on the left and
+  channels (logo, now with progress, next) on the right. `screens/TvPlayer.tsx`
+  plays with a 10 s start timeout, falls back to the next source, and zaps with ▲/▼.
+- **HLS needs Shaka:** live streams are HLS with MPEG-TS segments over plain HTTP
+  from provider IPs. Build the player with `scripts/build-shaka.sh`; its output
+  goes to `shared/src/player/shaka/vendor/` (git-ignored: Amazon Program Materials).
+  It's registered in `apps/stremio-vega/index.js`.
+
+Untested on the device: Shaka playback of these streams, guide build time on the
+stick, and real picture quality per provider (the TS segments are on raw IPs this
+cloud workspace can't reach).
+
 ## Open issues (in priority order)
 
 1. **About 5 minutes into a film, playback stalls.** The spinner shows, then

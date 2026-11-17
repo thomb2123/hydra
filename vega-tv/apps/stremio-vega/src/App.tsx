@@ -22,6 +22,10 @@ import {nextEpisode} from './stremio/playback';
 import {forgetPick} from './stremio/autoPick';
 import {markNoSeekHost} from './stremio/badHosts';
 import {MetaDetail, MetaPreview, Video} from './stremio/types';
+import {useTv} from './tv/useTv';
+import {TvPlayer} from './screens/TvPlayer';
+import {MergedChannel, Source} from './tv/channels';
+import {SportEvent} from './tv/events';
 
 type Route =
   | {name: 'browse'}
@@ -32,12 +36,14 @@ type Route =
   | {name: 'search'}
   | {name: 'categories'}
   | {name: 'genre'; genre: string}
-  | {name: 'settings'};
+  | {name: 'settings'}
+  | {name: 'tv'; list: MergedChannel[]; index: number; feeds?: Source[]; title?: string};
 
 const log = (line: string) => console.log(`[stremio] ${line}`);
 
 export const App = () => {
   const state = useStremioState();
+  const tv = useTv();
   const [splashDone, setSplashDone] = useState(false);
   const [tab, setTab] = useState<BrowseTab>('home');
   const [stack, setStack] = useState<Route[]>([{name: 'browse'}]);
@@ -52,6 +58,18 @@ export const App = () => {
   const openSearch = useCallback(() => push({name: 'search'}), [push]);
   const openCategories = useCallback(() => push({name: 'categories'}), [push]);
   const openSettings = useCallback(() => push({name: 'settings'}), [push]);
+  const playChannel = useCallback((channel: MergedChannel, list: MergedChannel[]) => push({name: 'tv', list, index: Math.max(0, list.indexOf(channel))}), [push]);
+  const playEvent = useCallback(
+    (event: SportEvent) => {
+      const channel = event.channelId ? (tv.guide?.channels || []).find((c) => c.id === event.channelId) : undefined;
+      if (channel) {
+        push({name: 'tv', list: [channel], index: 0, title: `${event.title}`});
+      } else if (event.feeds.length) {
+        push({name: 'tv', list: [], index: 0, feeds: event.feeds, title: event.title});
+      }
+    },
+    [push, tv.guide],
+  );
 
   // Diagnostics: which catalogs the account's add-ons offer (names only).
   useEffect(() => {
@@ -168,6 +186,19 @@ export const App = () => {
       return <GenrePage key={route.genre} state={state} genre={route.genre} onBack={pop} openMeta={openMeta} />;
     case 'settings':
       return <Settings state={state} onBack={pop} />;
+    case 'tv':
+      return tv.access ? (
+        <TvPlayer
+          access={tv.access}
+          list={route.list}
+          index={route.index}
+          feeds={route.feeds}
+          title={route.title}
+          onExit={pop}
+          onRanked={tv.refreshRanking}
+          log={log}
+        />
+      ) : null;
     default:
       return null;
   }
@@ -177,7 +208,7 @@ export const App = () => {
   // so Back is instant and lands on the same row and card. It is released during
   // playback to give the player the stick's memory.
   const top = route.name === 'browse' ? null : renderTop();
-  const keepBrowse = route.name !== 'player';
+  const keepBrowse = route.name !== 'player' && route.name !== 'tv';
   return (
     <View style={styles.fill}>
       {keepBrowse ? (
@@ -191,6 +222,9 @@ export const App = () => {
             openSearch={openSearch}
             openCategories={openCategories}
             openSettings={openSettings}
+            tv={tv}
+            playChannel={playChannel}
+            playEvent={playEvent}
           />
         </View>
       ) : null}

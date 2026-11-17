@@ -11,8 +11,12 @@ import {RowSpec, Tab, rowsForTab} from '../stremio/rows';
 import {recommendationRows} from '../stremio/recommend';
 import {LibraryItem, MetaPreview} from '../stremio/types';
 import {StremioState, continueWatching} from '../state';
+import {TvGuide} from './TvGuide';
+import {TvState} from '../tv/useTv';
+import {MergedChannel} from '../tv/channels';
+import {SportEvent} from '../tv/events';
 
-export type BrowseTab = Tab | 'mylist';
+export type BrowseTab = Tab | 'mylist' | 'tv';
 
 export interface BrowseProps {
   state: StremioState;
@@ -22,10 +26,14 @@ export interface BrowseProps {
   openSearch: () => void;
   openCategories: () => void;
   openSettings: () => void;
+  tv: TvState;
+  playChannel: (channel: MergedChannel, list: MergedChannel[]) => void;
+  playEvent: (event: SportEvent) => void;
 }
 
 const TABS: {key: BrowseTab; label: string}[] = [
   {key: 'home', label: 'Home'},
+  {key: 'tv', label: 'Live TV'},
   {key: 'series', label: 'Series'},
   {key: 'films', label: 'Films'},
   {key: 'new', label: 'New & Popular'},
@@ -36,10 +44,10 @@ function libraryPreview(item: LibraryItem): MetaPreview {
   return {id: item._id, type: item.type, name: item.name, poster: item.poster || undefined};
 }
 
-export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories, openSettings}: BrowseProps) => {
-  const baseRows = useMemo<RowSpec[]>(() => (tab === 'mylist' ? [] : rowsForTab(tab, state.addons)), [tab, state.addons]);
+export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories, openSettings, tv, playChannel, playEvent}: BrowseProps) => {
+  const baseRows = useMemo<RowSpec[]>(() => (tab === 'mylist' || tab === 'tv' ? [] : rowsForTab(tab, state.addons)), [tab, state.addons]);
   const [personalRows, setPersonalRows] = useState<RowSpec[] | null>(null);
-  const wantsPersonal = !!state.session && tab !== 'mylist' && tab !== 'new' && state.library.length > 0;
+  const wantsPersonal = !!state.session && tab !== 'mylist' && tab !== 'new' && tab !== 'tv' && state.library.length > 0;
   // Personal recommendations from watched titles and My List; computed once per tab
   // and library change. Their slots are reserved up front so rows never jump around.
   const libraryKey = state.library.map((i) => `${i._id}:${i._mtime}`).slice(0, 30).join('|');
@@ -135,6 +143,10 @@ export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories
       <NavTab label={state.session ? 'Account' : 'Sign in'} onPress={openSettings} />
     </View>
   );
+
+  if (tab === 'tv') {
+    return <TvGuide tv={tv} nav={nav} playChannel={playChannel} playEvent={playEvent} />;
+  }
 
   if (tab === 'mylist') {
     const items = state.library.filter((item) => !item.removed && !item.temp).map(libraryPreview);
