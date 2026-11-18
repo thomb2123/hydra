@@ -47,7 +47,11 @@ export function useTv(): TvState {
         setError('No UK or US channels were found on your FlixNest providers.');
       }
     } catch (e: any) {
-      if (!quiet) {
+      if (fx.needsSignIn(e)) {
+        // The FlixNest session (about 30 days) has ended: show the pairing screen again.
+        await fx.forgetAccess();
+        setAccess(null);
+      } else if (!quiet) {
         setError(`Couldn't load channels: ${e?.message || e}`);
       }
     } finally {

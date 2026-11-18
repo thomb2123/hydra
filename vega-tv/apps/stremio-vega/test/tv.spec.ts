@@ -91,3 +91,19 @@ describe('guide consensus', () => {
     expect(pick.outliers).toEqual(['1']);
   });
 });
+
+import {classifyMediaPlaylist} from '../src/tv/probe';
+
+describe('stream probe', () => {
+  const placeholder = (file: string) => `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:11\n#EXTINF:15.0,\nhttp://10.0.0.1/video/${file}\n#EXT-X-ENDLIST\n`;
+  it('recognises the providers’ maintenance and black-screen placeholders', () => {
+    expect(classifyMediaPlaylist(placeholder('Maintenance2024.mp4')).state).toBe('placeholder');
+    expect(classifyMediaPlaylist(placeholder('black.ts')).state).toBe('placeholder');
+  });
+  it('accepts a real live playlist and rejects empty ones', () => {
+    const live = '#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1264\n#EXT-X-TARGETDURATION:12\n#EXTINF:11.52,\nhttp://10.0.0.2:80/hls/abc/577997_1264.ts\n#EXTINF:9.6,\nhttp://10.0.0.2:80/hls/def/577997_1265.ts\n';
+    expect(classifyMediaPlaylist(live).state).toBe('live');
+    expect(classifyMediaPlaylist('#EXTM3U\n#EXT-X-TARGETDURATION:10\n').state).toBe('dead');
+    expect(classifyMediaPlaylist('<html>error</html>').state).toBe('dead');
+  });
+});

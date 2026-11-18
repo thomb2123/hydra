@@ -65,6 +65,10 @@ export interface VideoScreenProps {
   onFailed?: (reason: string) => void;
   /** Called once, when this source first starts playing. */
   onStarted?: () => void;
+  /** Replaces the Menu (☰) key action, e.g. live TV's source list. */
+  onMenu?: () => void;
+  /** Ignore remote keys and Back (another layer, such as a source list, has the remote). */
+  inputLocked?: boolean;
   /** Shows a "Next Episode" button and plays it automatically at the end. */
   onNext?: () => void;
   nextLabel?: string;
@@ -278,7 +282,7 @@ const PanelRow = ({label, selected, onPress, preferred}: {label: string; selecte
 
 // ---------------------------------------------------------------------------
 
-export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, onFailed, onStarted, onNext, nextLabel, preferredSubtitle, onSubtitleChosen, onRouteSwitched}: VideoScreenProps) => {
+export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, onFailed, onStarted, onMenu, inputLocked, onNext, nextLabel, preferredSubtitle, onSubtitleChosen, onRouteSwitched}: VideoScreenProps) => {
   const autoSubDone = useRef(false);
   const mkvRef = useRef<MkvSession | null>(null);
   const [embedded, setEmbeddedState] = useState<EmbeddedSubtitleTrack[]>([]);
@@ -1025,12 +1029,16 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
         break;
       case 'menu':
       case 'context_menu':
-        openPanel();
+        if (onMenu) {
+          onMenu();
+        } else {
+          openPanel();
+        }
         break;
       default:
         break;
     }
-  });
+  }, !inputLocked);
 
   useBackHandler(() => {
     if (panel) {
@@ -1053,7 +1061,7 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
     reportProgress(true);
     onExit();
     return true;
-  });
+  }, !inputLocked);
 
   const shown = scrub ?? position;
   const progress = duration > 0 ? Math.min(1, shown / duration) : 0;
