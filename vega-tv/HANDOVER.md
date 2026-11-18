@@ -121,7 +121,7 @@ cloud workspace can't reach).
      data is trimmed at keyframe boundaries; a watchdog steps over small gaps,
      restarts reading if it stopped, and reloads at the current position after
      8 s frozen. If the player will not free watched video (buffer full and
-     under 2.5 s left), it refreshes at the current position straight away (a
+     under 4 s left), it downloads the next part while still playing, then clears and refills at the same spot (a
      short pause instead of a freeze). Films played by the platform (MP4/HLS)
      get a re-seek watchdog.
    - `scripts/dev/mkv-stall-sim.js` reproduces the stall with the old engine

@@ -381,7 +381,7 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
           // platform is holding on to watched video. Start fresh at this spot (what
           // skipping did by hand) instead of letting the picture freeze.
           const left = bufferedEnd - (Number(player.currentTime) || 0);
-          if (attempt >= 40 || (attempt >= 2 && left < 2.5)) {
+          if (attempt >= 40 || (attempt >= 2 && left < 4)) {
             const full = new Error(`buffer full with ${left.toFixed(1)} s left`);
             full.name = 'BufferStuck';
             throw full;
@@ -614,11 +614,11 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
     }
   };
 
-  const start = async (time: number, preloaded?: Uint8Array) => {
+  const start = async (time: number, preloaded?: Uint8Array, base?: number) => {
     const gen = ++generation;
     current?.abort();
     remux.reset();
-    offset = clusterAt(time);
+    offset = base ?? clusterAt(time);
     if (preloaded) {
       pending = preloaded;
       pendingBase = offset;
@@ -648,11 +648,44 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
     }
     await start(time);
   };
-  const restart = () => {
+  /**
+   * Starts fresh at the current spot with as little interruption as possible: the
+   * next part of the film is downloaded while the old buffer is still playing,
+   * and only then is the buffer cleared and refilled, without stepping back.
+   */
+  const refreshInPlace = async () => {
+    const gen = ++generation;
+    current?.abort();
     restartedAt = Date.now();
-    seekingUntil = restartedAt + 4000;
-    const t = Math.max(0, (Number(player.currentTime) || 0) - 0.5);
-    reload(t).catch((e: any) => log(`mkv: restart failed (${e?.message || e})`));
+    seekingUntil = restartedAt + 6000;
+    const base = clusterAt(Number(player.currentTime) || 0);
+    let chunk: Uint8Array | null = null;
+    for (let attempt = 0; attempt < 3 && !chunk && !closed; attempt++) {
+      try {
+        current = fetchRange(url, base, base + FIRST_CHUNK - 1);
+        chunk = await current.promise;
+      } catch {
+        await delay(300);
+      }
+    }
+    if (closed || gen !== generation) {
+      return;
+    }
+    const all = (info.duration || 0) + 3600;
+    await removeRange(vsb, 0, all);
+    await removeRange(asb, 0, all);
+    trimmedTo = 0;
+    appended = [];
+    const t = Number(player.currentTime) || 0;
+    try {
+      player.currentTime = t;
+    } catch {
+      // Ignore.
+    }
+    await start(t, chunk || undefined, chunk ? base : undefined);
+  };
+  const restart = () => {
+    refreshInPlace().catch((e: any) => log(`mkv: restart failed (${e?.message || e})`));
   };
 
   // Stall watchdog: if the clock stands still while playing, first jump any small gap
