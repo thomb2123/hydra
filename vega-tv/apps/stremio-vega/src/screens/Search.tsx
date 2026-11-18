@@ -2,7 +2,8 @@
 // results on the right (merged across every add-on that supports search), with
 // matching categories and popular titles before anything is typed.
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {FlatList, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {Animated, FlatList, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {useFocusScale, usePulse} from '../ui/motion';
 import {useBackHandler} from '../../../../shared/src/tv/remote';
 import {Pill, PosterCard} from '../ui/Cards';
 import {useRowItems} from '../ui/ContentRow';
@@ -31,6 +32,7 @@ const KEYS = 'abcdefghijklmnopqrstuvwxyz1234567890'.split('');
 
 const Key = ({label, onPress, wide, preferred}: {label: string; onPress: () => void; wide?: boolean; preferred?: boolean}) => {
   const [focused, setFocused] = useState(false);
+  const scale = useFocusScale(focused, 1.12, 120);
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -40,9 +42,34 @@ const Key = ({label, onPress, wide, preferred}: {label: string; onPress: () => v
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      style={[styles.key, wide && styles.keyWide, focused && styles.keyFocused]}>
-      <Text style={[styles.keyText, focused && styles.keyTextFocused]}>{label}</Text>
+      style={styles.keyOuter}>
+      <Animated.View style={[styles.key, wide && styles.keyWide, focused && styles.keyFocused, {transform: [{scale}]}]}>
+        <Text style={[styles.keyText, focused && styles.keyTextFocused]}>{label}</Text>
+      </Animated.View>
     </TouchableOpacity>
+  );
+};
+
+/** A magnifying glass drawn with views (no icon font on the stick). */
+const SearchIcon = ({active}: {active: boolean}) => (
+  <View style={styles.icon}>
+    <View style={[styles.iconLens, active && styles.iconActive]} />
+    <View style={[styles.iconHandle, active && styles.iconHandleActive]} />
+  </View>
+);
+
+/** The search field: icon, what has been typed (or a hint), and a blinking cursor. */
+const SearchField = ({query}: {query: string}) => {
+  const blink = usePulse(1000);
+  const typed = query.length > 0;
+  return (
+    <View style={[styles.field, typed && styles.fieldActive]}>
+      <SearchIcon active={typed} />
+      <Text style={[styles.query, !typed && styles.placeholder]} numberOfLines={1}>
+        {typed ? query : 'Search'}
+      </Text>
+      <Animated.View style={[styles.caret, {opacity: blink}]} />
+    </View>
   );
 };
 
@@ -146,12 +173,8 @@ export const Search = ({state, openMeta, openGenre, onBack, channels = [], event
   return (
     <View style={styles.root}>
       <View style={styles.left}>
-        <View style={styles.queryBox}>
-          <Text style={[styles.query, !query && styles.placeholder]} numberOfLines={1}>
-            {query || 'Search titles, genres, channels, teams'}
-          </Text>
-          <View style={styles.caret} />
-        </View>
+        <SearchField query={query} />
+        <Text style={styles.fieldHint}>Films, series, genres, channels and live matches</Text>
         {keyboard}
         {catalogs.length === 0 ? <Text style={styles.muted}>None of your add-ons support search.</Text> : null}
       </View>
@@ -198,14 +221,22 @@ export const Search = ({state, openMeta, openGenre, onBack, channels = [], event
 const styles = StyleSheet.create({
   root: {flex: 1, flexDirection: 'row', backgroundColor: brand.background, paddingTop: 50},
   left: {width: 640, paddingLeft: edge, paddingRight: 30},
-  queryBox: {flexDirection: 'row', alignItems: 'center', height: 70, borderBottomWidth: 3, borderBottomColor: brand.accent, marginBottom: 26},
-  query: {color: brand.text, fontSize: 38, fontWeight: '700', flexShrink: 1},
-  placeholder: {color: brand.textMuted, fontSize: 28, fontWeight: '500'},
-  caret: {width: 3, height: 40, backgroundColor: brand.text, marginLeft: 4},
+  field: {flexDirection: 'row', alignItems: 'center', height: 84, borderRadius: 42, paddingHorizontal: 28, backgroundColor: brand.surfaceRaised, borderWidth: 2, borderColor: 'rgba(255,255,255,0.08)', width: 540},
+  fieldActive: {borderColor: brand.accent, backgroundColor: '#1d1930'},
+  fieldHint: {color: brand.textMuted, fontSize: type.tiny, marginTop: 12, marginBottom: 22, marginLeft: 28},
+  query: {color: brand.text, fontSize: 36, fontWeight: '700', flexShrink: 1, marginLeft: 18},
+  placeholder: {color: brand.textMuted, fontSize: 30, fontWeight: '600'},
+  caret: {width: 3, height: 40, borderRadius: 2, backgroundColor: brand.accent, marginLeft: 4},
+  icon: {width: 34, height: 34},
+  iconLens: {position: 'absolute', left: 0, top: 0, width: 25, height: 25, borderRadius: 13, borderWidth: 4, borderColor: brand.textMuted},
+  iconHandle: {position: 'absolute', left: 21, top: 22, width: 13, height: 5, borderRadius: 3, backgroundColor: brand.textMuted, transform: [{rotate: '45deg'}]},
+  iconActive: {borderColor: brand.text},
+  iconHandleActive: {backgroundColor: brand.text},
   keyboard: {flexDirection: 'row', flexWrap: 'wrap', width: 540},
-  key: {width: 80, height: 68, margin: 5, borderRadius: 6, backgroundColor: brand.surface, justifyContent: 'center', alignItems: 'center'},
+  keyOuter: {margin: 5},
+  key: {width: 80, height: 68, borderRadius: 12, backgroundColor: brand.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'transparent'},
   keyWide: {width: 170},
-  keyFocused: {backgroundColor: brand.text, transform: [{scale: 1.08}]},
+  keyFocused: {backgroundColor: brand.text, borderColor: brand.accent},
   keyText: {color: brand.text, fontSize: type.body, fontWeight: '700'},
   keyTextFocused: {color: '#000'},
   right: {flex: 1, paddingRight: 40},

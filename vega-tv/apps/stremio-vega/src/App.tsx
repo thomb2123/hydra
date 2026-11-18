@@ -17,7 +17,8 @@ import {Splash} from './screens/Splash';
 import {Starting} from './screens/Starting';
 import {Streams} from './screens/Streams';
 import {brand} from './ui/brand';
-import {FadeIn} from './ui/FadeIn';
+import {Transition} from './ui/motion';
+import {playUiSound, setUiSoundsEnabled, setUiSoundsSuspended} from './ui/uiSound';
 import {perfScreen, startPerfMonitor, stopPerfMonitor} from './perf';
 import {RankedStream} from './stremio/streamPicker';
 import {nextEpisode} from './stremio/playback';
@@ -45,10 +46,26 @@ type Route =
 
 const log = (line: string) => console.log(`[stremio] ${line}`);
 
+// The intro plays over the app while its account and channel data load underneath; the
+// home screen itself is built when the intro ends (on black), so the intro runs alone.
 export const App = () => {
+  const [splashDone, setSplashDone] = useState(false);
+  const finishSplash = useCallback(() => setSplashDone(true), []);
+  return (
+    <View style={styles.fill}>
+      <AppBody introDone={splashDone} />
+      {!splashDone ? (
+        <View style={styles.layer}>
+          <Splash onDone={finishSplash} />
+        </View>
+      ) : null}
+    </View>
+  );
+};
+
+const AppBody = ({introDone}: {introDone: boolean}) => {
   const state = useStremioState();
   const tv = useTv();
-  const [splashDone, setSplashDone] = useState(false);
   const [tab, setTab] = useState<BrowseTab>('home');
   // Open on the screen chosen in Settings (once, when the saved settings are in).
   const startApplied = useRef(false);
@@ -74,12 +91,24 @@ export const App = () => {
   useEffect(() => {
     perfScreen(route.name === 'browse' ? tab : route.name);
   }, [route.name, tab]);
-  // Notes every key press app-wide (handler off), so background work can wait for a still remote.
-  useRemoteKeys(noop, false);
-  const push = useCallback((next: Route) => setStack((s) => [...s, next]), []);
+  // Menu sounds: after the intro, never over video (players released while it plays).
+  useEffect(() => {
+    setUiSoundsSuspended(!introDone || playing);
+  }, [introDone, playing]);
+  useEffect(() => {
+    setUiSoundsEnabled(state.menuSounds);
+  }, [state.menuSounds]);
+  // Every key press, app-wide: noted (background work waits for a still remote) and,
+  // in the menus, given its sound.
+  useRemoteKeys(menuKeySound, !playing);
+  const push = useCallback((next: Route) => {
+    if (PAGES_WITH_WHOOSH.has(next.name)) {
+      setTimeout(() => playUiSound('open'), 50);
+    }
+    setStack((s) => [...s, next]);
+  }, []);
   const pop = useCallback(() => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)), []);
   const replaceTop = useCallback((next: Route) => setStack((s) => [...s.slice(0, -1), next]), []);
-  const finishSplash = useCallback(() => setSplashDone(true), []);
 
   const openMeta = useCallback((type: string, id: string, preview?: MetaPreview) => push({name: 'detail', type, id, preview}), [push]);
   const openGenre = useCallback((genre: string) => push({name: 'genre', genre}), [push]);
@@ -115,9 +144,6 @@ export const App = () => {
     }
   }, [state.ready, state.addons, state.server, state.session]);
 
-  if (!splashDone) {
-    return <Splash onDone={finishSplash} />;
-  }
   if (!state.ready) {
     return (
       <View style={styles.loading}>
@@ -275,11 +301,12 @@ export const App = () => {
   } else if (!top) {
     browseAlive.current = true;
   }
-  const keepBrowse = !onVideo && browseAlive.current;
+  // Built once the intro has finished (building it underneath made the intro stutter).
+  const keepBrowse = introDone && !onVideo && browseAlive.current;
   return (
     <View style={styles.fill}>
       {keepBrowse ? (
-        <FadeIn token={top ? 'hidden' : `browse-${stack.length}`} style={[styles.fill, top ? styles.hidden : null]}>
+        <Transition token={top ? 'hidden' : `browse-${stack.length}`} kind="zoom" style={[styles.fill, top ? styles.hidden : null]}>
           <BrowseRoot
             active={!top}
             state={state}
@@ -293,16 +320,16 @@ export const App = () => {
             playChannel={playChannel}
             playEvent={playEvent}
           />
-        </FadeIn>
+        </Transition>
       ) : null}
       {top ? (
         // Video screens appear on their own (a fade over a starting picture would flash).
         route.name === 'player' || route.name === 'tv' || route.name === 'gap' ? (
           <View style={styles.layer}>{top}</View>
         ) : (
-          <FadeIn token={`${stack.length}-${route.name}`} style={styles.layer}>
+          <Transition token={`${stack.length}-${route.name}`} kind={route.name === 'detail' || route.name === 'starting' || route.name === 'streams' ? 'fade' : 'rise'} style={styles.layer}>
             {top}
-          </FadeIn>
+          </Transition>
         )
       ) : null}
     </View>
@@ -342,4 +369,14 @@ const styles = StyleSheet.create({
   loadingMark: {color: brand.accent, fontSize: 160, fontWeight: '900'},
 });
 
-const noop = () => undefined;
+const PAGES_WITH_WHOOSH = new Set(['detail', 'search', 'settings', 'categories', 'genre']);
+
+function menuKeySound(key: string): void {
+  if (key === 'up' || key === 'down' || key === 'left' || key === 'right') {
+    playUiSound('move');
+  } else if (key === 'select') {
+    playUiSound('select');
+  } else if (key === 'back') {
+    playUiSound('back');
+  }
+}

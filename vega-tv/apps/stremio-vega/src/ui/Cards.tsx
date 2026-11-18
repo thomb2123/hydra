@@ -1,7 +1,8 @@
 // Focusable title cards: landscape artwork cards, ranked Top 10 posters,
 // plain buttons and nav tabs, all with the same white focus treatment.
 import React, {useState} from 'react';
-import {Image, StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle} from 'react-native';
+import {Animated, Image, StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle} from 'react-native';
+import {useFocusScale} from './motion';
 import {backdropOf} from './art';
 import {brand, type} from './brand';
 import {MetaPreview} from '../stremio/types';
@@ -39,6 +40,7 @@ export interface CardProps {
 /** 16:9 artwork card with the title along the bottom. */
 export const LandscapeCard = ({meta, onPress, onFocus, hasTVPreferredFocus, progress}: CardProps) => {
   const [focused, setFocused] = useState(false);
+  const scale = useFocusScale(focused);
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -51,17 +53,19 @@ export const LandscapeCard = ({meta, onPress, onFocus, hasTVPreferredFocus, prog
         onFocus?.();
       }}
       onBlur={() => setFocused(false)}
-      style={[styles.card, focused && styles.cardFocused]}>
-      <Art uri={backdropOf(meta, 'small')} fallback={meta.poster} style={styles.cardArt} />
-      <View style={styles.cardShade} />
-      <Text style={styles.cardTitle} numberOfLines={1}>
-        {meta.name}
-      </Text>
-      {progress != null ? (
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, {width: `${Math.max(3, Math.min(100, progress * 100))}%`}]} />
-        </View>
-      ) : null}
+      style={styles.cardOuter}>
+      <Animated.View style={[styles.card, focused && styles.cardFocused, {transform: [{scale}]}]}>
+        <Art uri={backdropOf(meta, 'small')} fallback={meta.poster} style={styles.cardArt} />
+        <View style={styles.cardShade} />
+        <Text style={styles.cardTitle} numberOfLines={1}>
+          {meta.name}
+        </Text>
+        {progress != null ? (
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, {width: `${Math.max(3, Math.min(100, progress * 100))}%`}]} />
+          </View>
+        ) : null}
+      </Animated.View>
     </TouchableOpacity>
   );
 };
@@ -69,6 +73,7 @@ export const LandscapeCard = ({meta, onPress, onFocus, hasTVPreferredFocus, prog
 /** Poster with a large rank number, for "Top 10" rows. */
 export const RankedCard = ({meta, rank, onPress, onFocus, hasTVPreferredFocus}: CardProps & {rank: number}) => {
   const [focused, setFocused] = useState(false);
+  const scale = useFocusScale(focused);
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -83,9 +88,9 @@ export const RankedCard = ({meta, rank, onPress, onFocus, hasTVPreferredFocus}: 
       onBlur={() => setFocused(false)}
       style={styles.ranked}>
       <Text style={[styles.rankNumber, rank >= 10 && styles.rankNumberWide]}>{rank}</Text>
-      <View style={[styles.rankPoster, focused && styles.cardFocused]}>
+      <Animated.View style={[styles.rankPoster, focused && styles.cardFocused, {transform: [{scale}]}]}>
         <Art uri={meta.poster} fallback={backdropOf(meta, 'small')} style={styles.rankArt} label={meta.name} />
-      </View>
+      </Animated.View>
     </TouchableOpacity>
   );
 };
@@ -93,6 +98,7 @@ export const RankedCard = ({meta, rank, onPress, onFocus, hasTVPreferredFocus}: 
 /** Poster card for grids (My List, Categories, Search). */
 export const PosterCard = ({meta, onPress, onFocus, hasTVPreferredFocus}: CardProps) => {
   const [focused, setFocused] = useState(false);
+  const scale = useFocusScale(focused);
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -105,7 +111,8 @@ export const PosterCard = ({meta, onPress, onFocus, hasTVPreferredFocus}: CardPr
         onFocus?.();
       }}
       onBlur={() => setFocused(false)}
-      style={[styles.poster, focused && styles.cardFocused]}>
+      style={styles.posterOuter}>
+      <Animated.View style={[styles.poster, focused && styles.cardFocused, {transform: [{scale}]}]}>
       {/* Under the artwork: readable while the image loads (or if it never does). */}
       <Text style={styles.posterBehind} numberOfLines={4}>
         {meta.name}
@@ -116,6 +123,7 @@ export const PosterCard = ({meta, onPress, onFocus, hasTVPreferredFocus}: CardPr
           {meta.name}
         </Text>
       ) : null}
+      </Animated.View>
     </TouchableOpacity>
   );
 };
@@ -133,6 +141,7 @@ export interface PillProps {
 /** Rounded action button ("Play", "Episodes", "Other versions"). */
 export const Pill = ({label, onPress, onFocus, primary, hasTVPreferredFocus, style}: PillProps) => {
   const [focused, setFocused] = useState(false);
+  const scale = useFocusScale(focused, 1.06);
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -144,9 +153,10 @@ export const Pill = ({label, onPress, onFocus, primary, hasTVPreferredFocus, sty
         setFocused(true);
         onFocus?.();
       }}
-      onBlur={() => setFocused(false)}
-      style={[styles.pill, primary && styles.pillPrimary, focused && styles.pillFocused, style]}>
-      <Text style={[styles.pillText, (primary || focused) && styles.pillTextDark]}>{label}</Text>
+      onBlur={() => setFocused(false)}>
+      <Animated.View style={[styles.pill, primary && styles.pillPrimary, focused && styles.pillFocused, style, {transform: [{scale}]}]}>
+        <Text style={[styles.pillText, (primary || focused) && styles.pillTextDark]}>{label}</Text>
+      </Animated.View>
     </TouchableOpacity>
   );
 };
@@ -178,17 +188,16 @@ const styles = StyleSheet.create({
   posterBehind: {position: 'absolute', left: 14, right: 14, top: 0, bottom: 0, textAlignVertical: 'center', paddingTop: 130, color: brand.textMuted, fontSize: type.small, fontWeight: '800', textAlign: 'center'},
   artMissing: {backgroundColor: brand.surfaceRaised, justifyContent: 'center', alignItems: 'center', padding: 14},
   artMissingText: {color: brand.textSoft, fontSize: type.small, fontWeight: '800', textAlign: 'center'},
+  cardOuter: {width: CARD_W, height: CARD_H, marginRight: 18},
   card: {
-    width: CARD_W,
-    height: CARD_H,
-    marginRight: 18,
+    flex: 1,
     borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 4,
     borderColor: 'transparent',
     backgroundColor: brand.surface,
   },
-  cardFocused: {borderColor: brand.focus, transform: [{scale: 1.08}]},
+  cardFocused: {borderColor: brand.focus},
   cardArt: {position: 'absolute', top: 0, left: 0, right: 0, bottom: 0},
   cardShade: {position: 'absolute', left: 0, right: 0, bottom: 0, height: 70, backgroundColor: 'rgba(0,0,0,0.55)'},
   cardTitle: {position: 'absolute', left: 14, right: 14, bottom: 14, color: brand.text, fontSize: type.small, fontWeight: '700'},
@@ -208,7 +217,8 @@ const styles = StyleSheet.create({
   rankNumberWide: {letterSpacing: -24},
   rankPoster: {width: 184, height: 276, borderRadius: 8, overflow: 'hidden', borderWidth: 4, borderColor: 'transparent'},
   rankArt: {width: '100%', height: '100%'},
-  poster: {width: 220, height: 330, margin: 12, borderRadius: 8, overflow: 'hidden', borderWidth: 4, borderColor: 'transparent', backgroundColor: brand.surface},
+  posterOuter: {width: 220, height: 330, margin: 12},
+  poster: {flex: 1, borderRadius: 8, overflow: 'hidden', borderWidth: 4, borderColor: 'transparent', backgroundColor: brand.surface},
   posterArt: {position: 'absolute', top: 0, left: 0, width: '100%', height: '100%'},
   posterTitle: {position: 'absolute', left: 0, right: 0, bottom: 0, padding: 8, color: brand.text, fontSize: type.tiny, fontWeight: '700', backgroundColor: 'rgba(0,0,0,0.7)'},
   pill: {
@@ -221,7 +231,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   pillPrimary: {backgroundColor: brand.text},
-  pillFocused: {backgroundColor: brand.text, borderColor: brand.accent, transform: [{scale: 1.06}]},
+  pillFocused: {backgroundColor: brand.text, borderColor: brand.accent},
   pillText: {color: brand.text, fontSize: type.body, fontWeight: '700'},
   pillTextDark: {color: '#000'},
   tab: {paddingHorizontal: 18, paddingVertical: 8, marginRight: 6, borderRadius: 6},

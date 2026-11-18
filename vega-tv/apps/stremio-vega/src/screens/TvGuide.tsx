@@ -4,11 +4,13 @@
 // channel you rest on is checked in the background so OK starts it at once.
 // The guide reopens on the last channel watched, like a TV box.
 import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {FlatList, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {Animated, FlatList, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {TVFocusGuideView} from '@amazon-devices/react-native-kepler';
 import {Pill} from '../ui/Cards';
 import {brand, edge, type} from '../ui/brand';
 import {ChannelLogo} from '../ui/ChannelLogo';
+import {useFocusScale, usePulse} from '../ui/motion';
+import {playUiSound} from '../ui/uiSound';
 import {CATEGORIES} from '../tv/lineup';
 import {MergedChannel} from '../tv/channels';
 import {NowNext, cachedNowNext, cleanTitle, displayTitle, msUntilChange, nowNext, nowTag, progressOf, timeRange} from '../tv/epg';
@@ -80,6 +82,9 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
       }
       pending.current = setTimeout(() => {
         pending.current = null;
+        // A new list: the panel no longer describes a channel from the last one.
+        detailsRef.current?.(null);
+        focusedChannel.current = null;
         setCategoryId(id);
       }, 160);
     },
@@ -131,6 +136,7 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
     const c = focusedChannel.current;
     if ((key === 'menu' || key === 'context_menu') && c) {
       const added = toggleFavourite(c.id);
+      playUiSound(added ? 'toggle' : 'back');
       setToast(added ? `★  ${c.name} added to Favourites` : `${c.name} removed from Favourites`);
       if (toastTimer.current) {
         clearTimeout(toastTimer.current);
@@ -229,6 +235,7 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
               id={c.id}
               title={c.title}
               active={c.id === active}
+              count={c.id === SPORT_ID ? tv.events.filter((e) => e.live).length : undefined}
               preferred={!settled.current && resumeIndex < 0 && resumeEvent < 0 && i === 0}
               onChoose={chooseCategory}
               register={registerCat}
@@ -258,7 +265,9 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
               key={active}
               data={list}
               keyExtractor={(c) => c.id}
-              initialNumToRender={Math.max(8, resumeIndex + 3)}
+              // Rows ahead are built in advance (a smaller window built them while scrolling:
+              // 0.4-0.55 s per press on the stick).
+              initialNumToRender={Math.max(7, resumeIndex + 3)}
               maxToRenderPerBatch={8}
               windowSize={9}
               renderItem={renderChannel}
@@ -276,8 +285,9 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
 };
 
 const CategoryButton = memo(
-  ({id, title, active, preferred, onChoose, register}: {id: string; title: string; active: boolean; preferred: boolean; onChoose: (id: string) => void; register: (id: string, ref: any) => void}) => {
+  ({id, title, active, preferred, count, onChoose, register}: {id: string; title: string; active: boolean; preferred: boolean; count?: number; onChoose: (id: string) => void; register: (id: string, ref: any) => void}) => {
   const [focused, setFocused] = useState(false);
+  const scale = useFocusScale(focused, 1.04, 140);
   return (
     <TouchableOpacity
       ref={(r) => register(id, r)}
@@ -288,14 +298,29 @@ const CategoryButton = memo(
         onChoose(id);
       }}
       onBlur={() => setFocused(false)}
-      style={[styles.cat, active && styles.catActive, focused && styles.catFocused]}>
-      <Text numberOfLines={1} style={[styles.catText, active && styles.catTextActive, focused && styles.catTextFocused]}>
-        {title}
-      </Text>
+      style={styles.catOuter}>
+      <Animated.View style={[styles.cat, active && styles.catActive, focused && styles.catFocused, {transform: [{scale}]}]}>
+        {active && !focused ? <View style={styles.catMarker} /> : null}
+        <Text numberOfLines={1} style={[styles.catText, active && styles.catTextActive, focused && styles.catTextFocused]}>
+          {title}
+        </Text>
+        {count ? <LiveCount count={count} dark={focused} /> : null}
+      </Animated.View>
     </TouchableOpacity>
   );
   },
 );
+
+/** "● 3" next to Live Now: how many matches are on, with a pulsing dot. */
+const LiveCount = ({count, dark}: {count: number; dark: boolean}) => {
+  const pulse = usePulse(1400);
+  return (
+    <View style={styles.liveCount}>
+      <Animated.View style={[styles.liveDot, {opacity: pulse}]} />
+      <Text style={[styles.liveCountText, dark && styles.catTextFocused]}>{count}</Text>
+    </View>
+  );
+};
 
 const Clock = () => {
   const [now, setNow] = useState(() => new Date());
@@ -353,15 +378,16 @@ const DetailsPanel = ({register}: {register: React.MutableRefObject<((d: Details
       : ' ';
   return (
     <View style={styles.details}>
+      <View style={[styles.detailsEdge, d?.tag === 'LIVE' && styles.detailsEdgeLive]} />
       <View style={styles.rowTop}>
         <Text numberOfLines={1} style={styles.detailsTitle}>
           {d?.tag ? <Text style={d.tag === 'LIVE' ? styles.tagLive : styles.tagReplay}>{d.tag === 'LIVE' ? 'LIVE  ' : 'REPLAY  '}</Text> : null}
-          {now?.title ? displayTitle(now) : d ? d.channel.name : ' '}
+          {now?.title ? displayTitle(now) : d ? d.channel.name : "What's on now"}
         </Text>
         <Text style={styles.detailsSource}>{source}</Text>
       </View>
       <Text numberOfLines={2} style={styles.detailsDesc}>
-        {now?.description || (d && now?.title ? `${timeRange(now)} on ${d.channel.name}` : d && !d.info ? 'Loading listings…' : d ? 'No listings for this channel right now.' : ' ')}
+        {now?.description || (d && now?.title ? `${timeRange(now)} on ${d.channel.name}` : d && !d.info ? 'Loading listings…' : d ? 'No listings for this channel right now.' : 'Move right into the channels to see what each one is showing.')}
       </Text>
       <Text numberOfLines={1} style={styles.detailsWarn}>
         {warn}
@@ -376,6 +402,7 @@ const SPORT_CATEGORIES = new Set(['uk-sport', 'us-sport']);
 
 export const ChannelRow = memo(({access, channel, preferred, liveTitle, favourite, onFocused, onDetails, onLeave, tagFor, onPress}: {access: fx.Access; channel: MergedChannel; preferred?: boolean; liveTitle?: string; favourite?: boolean; onFocused?: () => void; onDetails?: (d: Details | null) => void; onLeave?: (id: string) => void; tagFor?: (title: string) => ProgrammeTag; onPress: () => void}) => {
   const [focused, setFocused] = useState(false);
+  const scale = useFocusScale(focused, 1.02, 150);
   const [avail, setAvail] = useState<Avail>('unknown');
   const [info, setInfo] = useState<NowNext | null>(() => cachedNowNext(channel));
   // Resting on a channel for a moment checks it is really on air and readies its
@@ -450,13 +477,14 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, favourit
         onLeave?.(channel.id);
       }}
       accessibilityLabel={`${channel.name}${now?.title ? `, now ${cleanTitle(now.title)}` : ''}`}
-      style={[styles.row, focused && styles.rowFocused]}>
+      style={styles.rowOuter}>
+      <Animated.View style={[styles.row, focused && styles.rowFocused, {transform: [{scale}]}]}>
       <View style={styles.logoBox}>
         <ChannelLogo uri={channel.logo} name={channel.name} style={styles.logo} textStyle={styles.logoText} />
       </View>
       <View style={styles.rowMain}>
         <View style={styles.rowTop}>
-          <Text style={styles.chNumber}>{channel.number}</Text>
+          <Text style={[styles.chNumber, focused && styles.chNumberFocused]}>{channel.number}</Text>
           <Text numberOfLines={1} style={[styles.chName, focused && styles.textFocused]}>
             {channel.name}
           </Text>
@@ -470,19 +498,21 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, favourit
           {nowText}
         </Text>
         <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, {width: `${Math.round(progress * 100)}%`}]} />
+          <View style={[styles.progressFill, focused && styles.progressFillFocused, {width: `${Math.round(progress * 100)}%`}]} />
         </View>
         {/* (No extra description line on focus: rows keep one height, so the list never shifts.) */}
         <Text numberOfLines={1} style={styles.nextTitle}>
           {next?.title ? `Next  ${timeRange(next).split('–')[0]}  ${cleanTitle(next.title)}` : ''}
         </Text>
       </View>
+      </Animated.View>
     </TouchableOpacity>
   );
 });
 
 const EventRow = ({event, preferred, onFocused, onPress}: {event: SportEvent; preferred?: boolean; onFocused?: () => void; onPress: () => void}) => {
   const [focused, setFocused] = useState(false);
+  const scale = useFocusScale(focused, 1.02, 150);
   const when = event.live ? 'LIVE' : timeRange({start: event.start});
   return (
     <TouchableOpacity
@@ -494,7 +524,8 @@ const EventRow = ({event, preferred, onFocused, onPress}: {event: SportEvent; pr
         onFocused?.();
       }}
       onBlur={() => setFocused(false)}
-      style={[styles.row, styles.eventRow, focused && styles.rowFocused]}>
+      style={styles.rowOuter}>
+      <Animated.View style={[styles.row, styles.eventRow, focused && styles.rowFocused, {transform: [{scale}]}]}>
       <Text style={[styles.when, event.live && styles.live]}>{when}</Text>
       <View style={styles.rowMain}>
         <Text numberOfLines={1} style={[styles.chName, focused && styles.textFocused]}>
@@ -509,6 +540,7 @@ const EventRow = ({event, preferred, onFocused, onPress}: {event: SportEvent; pr
           </Text>
         ) : null}
       </View>
+      </Animated.View>
     </TouchableOpacity>
   );
 };
@@ -599,7 +631,7 @@ const styles = StyleSheet.create({
   side: {width: 380, paddingLeft: edge - 10, paddingRight: 16},
   main: {flex: 1, paddingRight: edge - 20},
   header: {flexDirection: 'row', alignItems: 'baseline', paddingHorizontal: 6, marginBottom: 12},
-  headerTitle: {flex: 1, color: brand.text, fontSize: type.heading, fontWeight: '900'},
+  headerTitle: {flex: 1, color: brand.text, fontSize: type.title - 6, fontWeight: '900'},
   clock: {color: brand.text, fontSize: type.heading, fontWeight: '800'},
   clockDate: {color: brand.textMuted, fontSize: type.body, fontWeight: '700'},
   flex: {flex: 1},
@@ -607,14 +639,22 @@ const styles = StyleSheet.create({
   offAir: {color: brand.textMuted, fontSize: type.tiny, fontWeight: '700', marginRight: 20},
   dim: {color: brand.textMuted},
   eventMeta: {color: brand.textSoft, fontSize: type.small, marginTop: 6},
-  cat: {paddingVertical: 14, paddingHorizontal: 18, borderRadius: 8, marginBottom: 6},
+  catOuter: {marginBottom: 6},
+  cat: {flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 18, borderRadius: 10},
   catActive: {backgroundColor: brand.surface},
   catFocused: {backgroundColor: brand.text},
+  catMarker: {position: 'absolute', left: 0, top: 10, bottom: 10, width: 5, borderRadius: 3, backgroundColor: brand.accent},
+  liveCount: {flexDirection: 'row', alignItems: 'center', marginLeft: 'auto', paddingLeft: 10},
+  liveDot: {width: 10, height: 10, borderRadius: 5, backgroundColor: '#ff3b3b', marginRight: 6},
+  liveCountText: {color: brand.textSoft, fontSize: type.small, fontWeight: '800'},
   catText: {color: brand.textMuted, fontSize: type.body, fontWeight: '700'},
   catTextActive: {color: brand.text},
   catTextFocused: {color: '#000'},
-  row: {flexDirection: 'row', alignItems: 'center', backgroundColor: brand.canvas, borderRadius: 10, borderWidth: 3, borderColor: 'transparent', padding: 12, marginBottom: 10},
-  rowFocused: {borderColor: brand.text, backgroundColor: brand.surfaceRaised},
+  rowOuter: {marginBottom: 10},
+  row: {flexDirection: 'row', alignItems: 'center', backgroundColor: brand.canvas, borderRadius: 12, borderWidth: 3, borderColor: 'transparent', padding: 12},
+  rowFocused: {borderColor: brand.accent, backgroundColor: '#1c1a2a'},
+  chNumberFocused: {color: brand.accent},
+  progressFillFocused: {backgroundColor: '#a48dff'},
   eventRow: {paddingVertical: 18},
   logoBox: {width: 150, height: 84, borderRadius: 8, backgroundColor: brand.surface, justifyContent: 'center', alignItems: 'center', marginRight: 22, overflow: 'hidden'},
   logo: {width: 136, height: 72},
@@ -628,7 +668,9 @@ const styles = StyleSheet.create({
   tagReplay: {color: brand.textMuted, fontWeight: '900'},
   nowTitle: {color: brand.textSoft, fontSize: type.small + 1, marginTop: 4},
   desc: {color: brand.textMuted, fontSize: type.tiny, marginTop: 4},
-  details: {height: 132, backgroundColor: brand.surface, borderRadius: 10, paddingHorizontal: 22, paddingVertical: 14, marginBottom: 12, marginHorizontal: 3},
+  details: {height: 132, backgroundColor: '#14121d', borderRadius: 12, paddingLeft: 30, paddingRight: 22, paddingVertical: 14, marginBottom: 12, marginHorizontal: 3, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(123,92,255,0.25)'},
+  detailsEdge: {position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, backgroundColor: brand.accent},
+  detailsEdgeLive: {backgroundColor: '#ff3b3b'},
   detailsTitle: {flex: 1, color: brand.text, fontSize: type.body + 2, fontWeight: '800'},
   detailsSource: {color: brand.textMuted, fontSize: type.tiny, fontWeight: '700', marginLeft: 16},
   detailsDesc: {color: brand.textSoft, fontSize: type.small, marginTop: 6, lineHeight: type.small + 8},

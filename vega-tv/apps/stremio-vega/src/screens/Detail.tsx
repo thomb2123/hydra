@@ -11,6 +11,7 @@ import {fetchMeta} from '../stremio/addons';
 import {prefetchPick} from '../stremio/autoPick';
 import {nextEpisode, subtitleList, videoIdOf} from '../stremio/playback';
 import {similarTitles} from '../stremio/recommend';
+import {playUiSound} from '../ui/uiSound';
 import {MetaDetail, MetaPreview, Video} from '../stremio/types';
 import {StremioState} from '../state';
 
@@ -256,7 +257,13 @@ export const Detail = ({state, type, id, preview, play, openStreams, onBack, ope
           <Pill label={`▶  ${playLabel}`} primary hasTVPreferredFocus onPress={() => play(meta, target)} />
           {resuming ? <Pill label="Start Over" onPress={() => play(meta, target, true)} /> : null}
           {state.session ? (
-            <Pill label={state.inMyList(meta.id) ? '✓  My List' : '+  My List'} onPress={() => state.toggleMyList({id: meta.id, type: meta.type || type, name: meta.name, poster: meta.poster})} />
+            <Pill
+              label={state.inMyList(meta.id) ? '✓  My List' : '+  My List'}
+              onPress={() => {
+                playUiSound(state.inMyList(meta.id) ? 'back' : 'toggle');
+                state.toggleMyList({id: meta.id, type: meta.type || type, name: meta.name, poster: meta.poster});
+              }}
+            />
           ) : null}
           <Pill label="Other versions" onPress={() => openStreams(meta, target)} />
           {inContinueWatching ? <Pill label="Remove from Continue Watching" onPress={() => state.removeFromContinueWatching(id)} /> : null}

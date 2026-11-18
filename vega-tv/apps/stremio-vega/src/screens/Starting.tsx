@@ -8,6 +8,7 @@ import {Fade} from '../ui/Billboard';
 import {Pill} from '../ui/Cards';
 import {backdropOf, logoOf} from '../ui/art';
 import {brand, edge, type} from '../ui/brand';
+import {playUiSound} from '../ui/uiSound';
 import {Pick, pickStream, prefetchPick} from '../stremio/autoPick';
 import {episodeLine, prepareSource} from '../stremio/playback';
 import {RankedStream} from '../stremio/streamPicker';
@@ -30,6 +31,12 @@ export interface StartingProps {
 
 export const Starting = ({state, meta, video, startIndex = 0, onReady, onManual, onBack, log}: StartingProps) => {
   const [failed, setFailed] = useState<string | null>(null);
+  // A low tone when a title cannot be started.
+  useEffect(() => {
+    if (failed) {
+      playUiSound('error');
+    }
+  }, [failed]);
   const cancelled = useRef(false);
   const sweep = useRef(new Animated.Value(0)).current;
 

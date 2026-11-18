@@ -1,7 +1,8 @@
 // "Live Sport Now" on the home screen: matches in progress right now (the same list as
 // Live TV › Live Now, those a TV guide confirms first), so live sport is one press away.
 import React, {memo, useCallback, useMemo, useState} from 'react';
-import {FlatList, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {Animated, FlatList, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {useFocusScale, usePulse} from './motion';
 import {brand, edge, type} from './brand';
 import {SportEvent} from '../tv/events';
 
@@ -66,6 +67,8 @@ const keyOf = (e: SportEvent) => e.key;
 
 const SportCard = ({event, preferred, onPress, onFocus}: {event: SportEvent; preferred?: boolean; onPress: () => void; onFocus?: () => void}) => {
   const [focused, setFocused] = useState(false);
+  const scale = useFocusScale(focused);
+  const pulse = usePulse(1400);
   const colour = SPORT_COLOUR[event.sport] || brand.accent;
   const where = event.channelName || 'Live feed';
   return (
@@ -80,9 +83,11 @@ const SportCard = ({event, preferred, onPress, onFocus}: {event: SportEvent; pre
         onFocus?.();
       }}
       onBlur={() => setFocused(false)}
-      style={[styles.card, focused && styles.cardFocused]}>
+      style={styles.cardOuter}>
+      <Animated.View style={[styles.card, focused && styles.cardFocused, {transform: [{scale}]}]}>
       <View style={[styles.stripe, {backgroundColor: colour}]} />
       <View style={styles.top}>
+        <Animated.View style={[styles.liveDot, {opacity: pulse}]} />
         <Text style={styles.live}>LIVE</Text>
         <Text numberOfLines={1} style={styles.sport}>
           {event.competition || event.sport}
@@ -94,6 +99,7 @@ const SportCard = ({event, preferred, onPress, onFocus}: {event: SportEvent; pre
       <Text numberOfLines={1} style={[styles.where, event.confirmed && styles.whereConfirmed]}>
         {event.confirmed ? `✓ ${where}` : where}
       </Text>
+      </Animated.View>
     </TouchableOpacity>
   );
 };
@@ -102,10 +108,9 @@ const styles = StyleSheet.create({
   row: {height: LIVE_ROW_H},
   title: {color: brand.text, fontSize: type.heading - 2, fontWeight: '800', marginLeft: edge, marginBottom: 14},
   list: {paddingLeft: edge, paddingRight: edge, paddingVertical: 10},
+  cardOuter: {width: SPORT_CARD_W, height: SPORT_CARD_H, marginRight: 18},
   card: {
-    width: SPORT_CARD_W,
-    height: SPORT_CARD_H,
-    marginRight: 18,
+    flex: 1,
     borderRadius: 8,
     borderWidth: 4,
     borderColor: 'transparent',
@@ -116,7 +121,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'space-between',
   },
-  cardFocused: {borderColor: brand.focus, transform: [{scale: 1.08}]},
+  cardFocused: {borderColor: brand.focus},
+  liveDot: {width: 10, height: 10, borderRadius: 5, backgroundColor: '#ff3b3b', marginRight: 8},
   stripe: {position: 'absolute', left: 0, top: 0, bottom: 0, width: 8},
   top: {flexDirection: 'row', alignItems: 'center'},
   live: {color: '#fff', backgroundColor: '#e50914', fontSize: type.tiny - 2, fontWeight: '900', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, marginRight: 10, overflow: 'hidden'},

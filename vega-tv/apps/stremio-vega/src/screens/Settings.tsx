@@ -81,13 +81,14 @@ export const Settings = ({state, tv, onBack}: {state: StremioState; tv: TvState;
         </View>
       )}
 
-      <Text style={styles.heading}>Start-up</Text>
+      <Text style={styles.heading}>Start-up and sound</Text>
       <View style={styles.row}>
         <FocusButton
           label={`Open on: ${state.startTab === 'tv' ? 'Live TV' : 'Home'}`}
           subtitle="Press to change"
           onPress={() => state.setStartTab(state.startTab === 'tv' ? 'home' : 'tv')}
         />
+        <FocusButton label={`Menu sounds: ${state.menuSounds ? 'On' : 'Off'}`} subtitle="Press to change" onPress={() => state.setMenuSounds(!state.menuSounds)} />
       </View>
 
       <Text style={styles.heading}>Subtitles</Text>
