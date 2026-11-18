@@ -8,6 +8,13 @@ import {discoverServer} from './stremio/streaming';
 
 const SESSION_KEY = 'stremio.session.v1';
 const SERVER_KEY = 'stremio.server.v1';
+
+/**
+ * Everything runs on the stick: films (debrid links, played and remuxed on the stick),
+ * subtitles, live TV and guides. The PC's Stremio server is never looked for or used,
+ * so the app works the same on any Wi-Fi (e.g. away from home).
+ */
+export const STICK_ONLY = true;
 const RESUME_KEY = 'stremio.resume.v1';
 
 export interface StoredSession {
@@ -88,7 +95,8 @@ export function useStremioState(): StremioState {
     (async () => {
       const stored = await loadJson<StoredSession | null>(SESSION_KEY, null);
       setSession(stored);
-      setServerState(await loadJson<string>(SERVER_KEY, ''));
+      // Stick only: a saved PC address is ignored, so the app behaves the same anywhere.
+      setServerState(STICK_ONLY ? '' : await loadJson<string>(SERVER_KEY, ''));
       setResume(await loadJson<Record<string, ResumePoint>>(RESUME_KEY, {}));
       setSubtitleLanguageState(await loadJson<string | null>(SUBTITLE_KEY, null));
       await loadAccountData(stored);
@@ -97,9 +105,10 @@ export function useStremioState(): StremioState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadAccountData]);
 
-  // No streaming server saved: look for Stremio on the home network once.
+  // No streaming server saved: look for Stremio on the home network once
+  // (never in stick-only mode: it would scan whatever network the stick is on).
   useEffect(() => {
-    if (!ready || server || discovering) {
+    if (STICK_ONLY || !ready || server || discovering) {
       return;
     }
     let alive = true;
@@ -150,7 +159,7 @@ export function useStremioState(): StremioState {
 
   const setServer = useCallback(async (url: string) => {
     await saveJson(SERVER_KEY, url);
-    setServerState(url);
+    setServerState(STICK_ONLY ? '' : url);
   }, []);
 
   // Writes a library item to the account and mirrors it locally.

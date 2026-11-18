@@ -7,7 +7,7 @@ import {useBackHandler} from '../../../../shared/src/tv/remote';
 import {requestJson} from '../../../../shared/src/net';
 import * as api from '../stremio/api';
 import {normaliseServerUrl} from '../stremio/streaming';
-import {StremioState} from '../state';
+import {STICK_ONLY, StremioState} from '../state';
 import {TvState} from '../tv/useTv';
 import {TvConnect} from './TvGuide';
 import {resetReliability} from '../tv/guide';
@@ -102,16 +102,25 @@ export const Settings = ({state, tv, onBack}: {state: StremioState; tv: TvState;
         </View>
       )}
 
-      <Text style={styles.heading}>Streaming server (your Windows PC)</Text>
-      <Text style={styles.text}>
-        Optional: used to check files before playing and for some subtitles. Torrent streams are switched off in this app (debrid only), so your IP address is never shared with torrent peers. Debrid streams play without the PC.
-      </Text>
-      <View style={styles.row}>
-        <TextField label="PC address" value={server} onChangeText={setServer} onSubmit={testServer} placeholder="192.168.1.20" keyboardType="url" />
-        <FocusButton label="Test & save" onPress={testServer} />
-      </View>
-      {serverStatus ? <Text style={styles.text}>{serverStatus}</Text> : null}
-      <Text style={styles.muted}>Current: {state.server || 'not set'}</Text>
+      {STICK_ONLY ? (
+        <>
+          <Text style={styles.heading}>Runs on this stick</Text>
+          <Text style={styles.text}>
+            Films, series, subtitles and live TV all run on this stick: no PC is needed, so it works on any Wi-Fi. Films come from your debrid service only (torrents are switched off, so your IP address is never shared with torrent peers).
+          </Text>
+        </>
+      ) : (
+        <>
+          <Text style={styles.heading}>Streaming server (your Windows PC)</Text>
+          <Text style={styles.text}>Optional: used to check files before playing and for some subtitles.</Text>
+          <View style={styles.row}>
+            <TextField label="PC address" value={server} onChangeText={setServer} onSubmit={testServer} placeholder="192.168.1.20" keyboardType="url" />
+            <FocusButton label="Test & save" onPress={testServer} />
+          </View>
+          {serverStatus ? <Text style={styles.text}>{serverStatus}</Text> : null}
+          <Text style={styles.muted}>Current: {state.server || 'not set'}</Text>
+        </>
+      )}
 
       <View style={styles.row}>
         <FocusButton label="Back" compact onPress={onBack} />

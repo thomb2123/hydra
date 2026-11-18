@@ -200,6 +200,9 @@ cloud workspace can't reach).
 - **Debrid only (18 Nov):** torrent / magnet streams are never picked, hidden from Other versions, and `resolveStream` refuses them (`DEBRID_ONLY` in `stremio/streaming.ts`), so the PC never joins a torrent swarm. Checked on the stick: Avengers: Endgame resumed from Comet (Real-Debrid) with no torrent activity.
 - **Home after a film:** the home screen is rebuilt only once visible again (it showed no rows until a key press when rebuilt hidden under the title page).
 
+- **Stick only (18 Nov):** `STICK_ONLY` in `state.ts`: the PC streaming server is never looked for (no network scan) or used, a saved PC address is ignored, Settings says no PC is needed. Checked: Avengers: Endgame played in 4K HDR10+ with subtitles, log "server=not set" and no request to the PC; live TV unaffected. Away from home the stick only needs Wi-Fi.
+- **Double zap fixed:** a key press that changes screen (▼ rebuilding the player) was counted again when the new screen saw the key release; key-down times are now shared app-wide (`shared/src/tv/remote.ts`). Checked: one ▼ = one channel.
+
 ## Open issues (in priority order)
 
 1. **About 5 minutes into a film, playback stalled** (engine only; films now play in the

@@ -65,33 +65,34 @@ export function useRemoteKeys(
 ): void {
   const handlerRef = useRef(handler);
   const enabledRef = useRef(enabled);
-  const downSeen = useRef<Record<string, number>>({});
   handlerRef.current = handler;
   enabledRef.current = enabled;
 
   useTVEventHandler((event: HWEvent) => {
-    if (!enabledRef.current || !event || !event.eventType) {
-      return;
+    const key = event && event.eventType ? normaliseKey(String(event.eventType)) : '';
+    const action = event?.eventKeyAction;
+    if (key && action === KEY_DOWN) {
+      // Recorded even by a disabled handler, so every screen knows this press happened.
+      keyDownAt[key] = Date.now();
     }
-    const key = normaliseKey(String(event.eventType));
-    const action = event.eventKeyAction;
-    if (action === KEY_DOWN) {
-      downSeen.current[key] = Date.now();
-      handlerRef.current(key, event);
+    if (!enabledRef.current || !key) {
       return;
     }
     if (action === KEY_UP) {
-      const seenAt = downSeen.current[key];
-      delete downSeen.current[key];
+      // The release of a press already handled on key-down is ignored. This is shared by
+      // the whole app: a press that changes screen (e.g. ▼ zapping to the next channel,
+      // which rebuilds the player) must not count again when the new screen sees its release.
+      const seenAt = keyDownAt[key];
       if (seenAt && Date.now() - seenAt < 5000) {
         return;
       }
-      handlerRef.current(key, event);
-      return;
     }
     handlerRef.current(key, event);
   });
 }
+
+/** When each key was last pressed down (ms), app-wide. */
+const keyDownAt: Record<string, number> = {};
 
 /**
  * Registers a Back handler. Return true from `onBack` to consume the press;

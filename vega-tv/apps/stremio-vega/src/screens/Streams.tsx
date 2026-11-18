@@ -78,7 +78,7 @@ export const Streams = ({state, meta, video, onPlay, onBack}: StreamsProps) => {
         {video ? ` · ${video.season != null ? `S${video.season}E${video.episode} ` : ''}${video.title || video.name || ''}` : ''}
       </Text>
       <Text style={styles.muted}>
-        {DEBRID_ONLY ? 'Debrid versions only: torrents are switched off, so your IP address is never shared with torrent peers.' : state.server ? `Streaming server: ${state.server}` : 'No streaming server set: torrent streams need the Stremio server on your PC.'}
+        {DEBRID_ONLY ? 'Debrid versions only, played on this stick: torrents are switched off, so your IP address is never shared with torrent peers.' : state.server ? `Streaming server: ${state.server}` : 'No streaming server set: torrent streams need the Stremio server on your PC.'}
       </Text>
       {busy ? <Text style={styles.busy}>{busy}</Text> : null}
       {message ? <Text style={styles.error}>{message}</Text> : null}
