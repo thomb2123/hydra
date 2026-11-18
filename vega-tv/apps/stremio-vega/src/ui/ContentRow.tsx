@@ -55,14 +55,16 @@ export function useRowItems(row: RowSpec): MetaPreview[] | null {
 export interface ContentRowProps {
   row: RowSpec;
   openMeta: (meta: MetaPreview, type: string) => void;
-  onFocusItem: (meta: MetaPreview) => void;
+  onFocusItem: (meta: MetaPreview, rowKey: string) => void;
   onLoaded?: (row: RowSpec, items: MetaPreview[]) => void;
   preferFirst?: boolean;
+  /** Title to give focus to (returning to this row from a title page). */
+  focusId?: string;
 }
 
 const CARD_STEP = CARD_W + 18; // card width + right margin
 
-export const ContentRow = memo(({row, openMeta, onFocusItem, onLoaded, preferFirst}: ContentRowProps) => {
+export const ContentRow = memo(({row, openMeta, onFocusItem, onLoaded, preferFirst, focusId}: ContentRowProps) => {
   const items = useRowItems(row);
   useEffect(() => {
     if (items && items.length) {
@@ -73,11 +75,11 @@ export const ContentRow = memo(({row, openMeta, onFocusItem, onLoaded, preferFir
   const renderItem = useCallback(
     ({item, index}: {item: MetaPreview; index: number}) =>
       row.top10 ? (
-        <RankedCard meta={item} rank={index + 1} hasTVPreferredFocus={preferFirst && index === 0} onFocus={() => onFocusItem(item)} onPress={() => openMeta(item, item.type || row.type)} />
+        <RankedCard meta={item} rank={index + 1} hasTVPreferredFocus={(preferFirst && index === 0) || item.id === focusId} onFocus={() => onFocusItem(item, row.key)} onPress={() => openMeta(item, item.type || row.type)} />
       ) : (
-        <LandscapeCard meta={item} hasTVPreferredFocus={preferFirst && index === 0} onFocus={() => onFocusItem(item)} onPress={() => openMeta(item, item.type || row.type)} />
+        <LandscapeCard meta={item} hasTVPreferredFocus={(preferFirst && index === 0) || item.id === focusId} onFocus={() => onFocusItem(item, row.key)} onPress={() => openMeta(item, item.type || row.type)} />
       ),
-    [row.top10, row.type, preferFirst, onFocusItem, openMeta],
+    [row.top10, row.type, row.key, preferFirst, focusId, onFocusItem, openMeta],
   );
   const getItemLayout = useCallback((_: unknown, index: number) => ({length: CARD_STEP, offset: CARD_STEP * index, index}), []);
 

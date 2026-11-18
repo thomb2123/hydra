@@ -143,7 +143,7 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
     setNote(null);
     if (channel && !feeds) {
       onChannel?.(channel);
-      nowNext(access, channel)
+      nowNext(access, channel, true)
         .then(async (v) => {
           setInfo(v);
           if (v.now?.programId && !v.now.description) {

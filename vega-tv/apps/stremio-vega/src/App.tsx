@@ -31,7 +31,7 @@ import {LIVE_NOW_ID, SportEvent} from './tv/events';
 type Route =
   | {name: 'browse'}
   | {name: 'detail'; type: string; id: string; preview?: MetaPreview}
-  | {name: 'starting'; meta: MetaDetail; video: Video | null; ranked?: RankedStream[]; startIndex?: number; notice?: string}
+  | {name: 'starting'; meta: MetaDetail; video: Video | null; ranked?: RankedStream[]; startIndex?: number; notice?: string; fromStart?: boolean}
   | {name: 'streams'; meta: MetaDetail; video: Video | null}
   | {name: 'player'; source: PlaySource; meta: MetaDetail; video: Video | null; videoId: string; ranked?: RankedStream[]; index?: number}
   /** A blank moment between two players, so the stick releases the old video surface first. */
@@ -117,7 +117,7 @@ export const App = () => {
           id={route.id}
           preview={route.preview}
           onBack={pop}
-          play={(meta, video) => push({name: 'starting', meta, video})}
+          play={(meta, video, fromStart) => push({name: 'starting', meta, video, fromStart})}
           openStreams={(meta, video) => push({name: 'streams', meta, video})}
         />
       );
@@ -137,7 +137,7 @@ export const App = () => {
           onReady={(source, ranked, index) =>
             replaceTop({
               name: 'player',
-              source,
+              source: route.fromStart ? {...source, startAt: 0} : source,
               meta: route.meta,
               video: route.video,
               videoId: route.video ? route.video.id : route.meta.behaviorHints?.defaultVideoId || route.meta.id,
@@ -295,7 +295,7 @@ const BrowseRoot = ({active, ...props}: React.ComponentProps<typeof Browse> & {a
     exitApp();
     return true;
   }, active);
-  return <MemoBrowse {...props} />;
+  return <MemoBrowse {...props} active={active} />;
 };
 
 const MemoBrowse = React.memo(Browse);

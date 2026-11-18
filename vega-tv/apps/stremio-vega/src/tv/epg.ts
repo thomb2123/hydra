@@ -152,33 +152,50 @@ export function nowTag(info: NowNext | null | undefined, sportChannel: boolean, 
   return null;
 }
 
-export function cachedNowNext(channel: MergedChannel): NowNext | null {
-  const hit = cache.get(channel.id);
-  return hit && Date.now() - hit.at < TTL_MS ? hit.value : null;
+/** A cached listing; `compare` asks for one that also checked the streams' own labels. */
+export function cachedNowNext(channel: MergedChannel, compare = false): NowNext | null {
+  for (const key of compare ? [`${channel.id}|full`] : [`${channel.id}|full`, `${channel.id}|basic`]) {
+    const hit = cache.get(key);
+    if (hit && Date.now() - hit.at < TTL_MS) {
+      return hit.value;
+    }
+  }
+  return null;
 }
 
-export async function nowNext(access: fx.Access, channel: MergedChannel): Promise<NowNext> {
-  const hit = cachedNowNext(channel);
+/**
+ * Now/next for a channel. Guide rows use the plain form: the official listing only
+ * (one cached request), so scrolling stays light. `compare` (the channel the viewer
+ * rests on, the player's Sources list) also reads up to three streams' own guides to
+ * spot a stream labelled as something else. Without an official listing the streams'
+ * guides are always read, since they are all there is.
+ */
+export async function nowNext(access: fx.Access, channel: MergedChannel, compare = false): Promise<NowNext> {
+  const hit = cachedNowNext(channel, compare);
   if (hit) {
     return hit;
   }
-  const running = inflight.get(channel.id);
+  const key = `${channel.id}|${compare ? 'full' : 'basic'}`;
+  const running = inflight.get(key);
   if (running) {
     return running;
   }
   const task = (async () => {
-    const withGuide = channel.sources.filter((s) => s.epgId).slice(0, 3);
-    const candidates = withGuide.length ? withGuide : channel.sources.slice(0, 2);
-    const [official, results] = await Promise.all([
-      officialNowNext(channel.id).catch(() => null),
-      Promise.all(candidates.map(async (s) => ({id: s.id, epg: await fx.epg(access, s.id).catch(() => ({}) as fx.Epg)}))),
-    ]);
     const noGuide = OFFICIAL_NONE[channel.id] || (guideFor(channel.id) ? 'The TV guide has no listing for this channel right now' : 'No TV guide lists this channel');
-    const value = withOfficial(pickConsensus(results), official, results, noGuide);
-    cache.set(channel.id, {at: Date.now(), value});
+    const official = await officialNowNext(channel.id).catch(() => null);
+    let value: NowNext;
+    if (official?.now && !compare) {
+      value = withOfficial({now: null, next: null, outliers: []}, official, [], noGuide);
+    } else {
+      const withGuide = channel.sources.filter((s) => s.epgId).slice(0, 3);
+      const candidates = withGuide.length ? withGuide : channel.sources.slice(0, 2);
+      const results = await Promise.all(candidates.map(async (s) => ({id: s.id, epg: await fx.epg(access, s.id).catch(() => ({}) as fx.Epg)})));
+      value = withOfficial(pickConsensus(results), official, results, noGuide);
+    }
+    cache.set(official?.now && !compare ? `${channel.id}|basic` : `${channel.id}|full`, {at: Date.now(), value});
     return value;
-  })().finally(() => inflight.delete(channel.id));
-  inflight.set(channel.id, task);
+  })().finally(() => inflight.delete(key));
+  inflight.set(key, task);
   return task;
 }
 

@@ -29,6 +29,8 @@ export interface BrowseProps {
   tv: TvState;
   playChannel: (channel: MergedChannel, list: MergedChannel[]) => void;
   playEvent: (event: SportEvent) => void;
+  /** False while a title page (or another screen) covers this one. */
+  active?: boolean;
 }
 
 const TABS: {key: BrowseTab; label: string}[] = [
@@ -44,7 +46,7 @@ function libraryPreview(item: LibraryItem): MetaPreview {
   return {id: item._id, type: item.type, name: item.name, poster: item.poster || undefined};
 }
 
-export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories, openSettings, tv, playChannel, playEvent}: BrowseProps) => {
+export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories, openSettings, tv, playChannel, playEvent, active = true}: BrowseProps) => {
   const baseRows = useMemo<RowSpec[]>(() => (tab === 'mylist' || tab === 'tv' ? [] : rowsForTab(tab, state.addons)), [tab, state.addons]);
   const [personalRows, setPersonalRows] = useState<RowSpec[] | null>(null);
   const wantsPersonal = !!state.session && tab !== 'mylist' && tab !== 'new' && tab !== 'tv' && state.library.length > 0;
@@ -105,8 +107,27 @@ export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories
 
   // Debounced so the billboard does not reload art for every card skimmed past;
   // only the billboard re-renders (rows are untouched).
+  // The card last focused: back from a title page, focus returns to it (the platform
+  // does not restore focus inside a screen that was hidden).
+  const lastFocus = useRef<{row: string; id: string} | null>(null);
+  const [restore, setRestore] = useState<{row: string; id: string} | null>(null);
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active && !wasActive.current && lastFocus.current) {
+      setRestore(lastFocus.current);
+    }
+    wasActive.current = active;
+  }, [active]);
+  useEffect(() => {
+    if (!restore) {
+      return undefined;
+    }
+    const timer = setTimeout(() => setRestore(null), 800);
+    return () => clearTimeout(timer);
+  }, [restore]);
   const onFocusItem = useCallback(
-    (meta: MetaPreview) => {
+    (meta: MetaPreview, row: string) => {
+      lastFocus.current = {row, id: meta.id};
       if (focusTimer.current) {
         clearTimeout(focusTimer.current);
       }
@@ -126,9 +147,16 @@ export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories
   const hasResume = resume.length > 0;
   const renderRow = useCallback(
     ({item, index}: {item: RowSpec; index: number}) => (
-      <ContentRow row={item} openMeta={open} onFocusItem={onFocusItem} onLoaded={index < 2 ? onLoaded : undefined} preferFirst={index === 0 && !hasResume} />
+      <ContentRow
+        row={item}
+        openMeta={open}
+        onFocusItem={onFocusItem}
+        onLoaded={index < 2 ? onLoaded : undefined}
+        preferFirst={index === 0 && !hasResume && !lastFocus.current}
+        focusId={restore && restore.row === item.key ? restore.id : undefined}
+      />
     ),
-    [open, onFocusItem, onLoaded, hasResume],
+    [open, onFocusItem, onLoaded, hasResume, restore],
   );
 
   const nav = (
@@ -181,9 +209,9 @@ export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories
           renderItem={({item, index}) => (
             <LandscapeCard
               meta={libraryPreview(item)}
-              hasTVPreferredFocus={index === 0}
+              hasTVPreferredFocus={restore ? restore.row === 'resume' && restore.id === item._id : index === 0 && !lastFocus.current}
               progress={item.state.duration ? (item.state.timeOffset || 0) / item.state.duration : undefined}
-              onFocus={() => onFocusItem(libraryPreview(item))}
+              onFocus={() => onFocusItem(libraryPreview(item), 'resume')}
               onPress={() => open(libraryPreview(item), item.type)}
             />
           )}

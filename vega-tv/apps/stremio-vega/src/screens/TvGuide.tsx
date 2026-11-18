@@ -387,6 +387,10 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, favourit
     const timer = setTimeout(() => {
       setAvail((a) => (a === 'unknown' ? 'checking' : a));
       prefetchChannel(access, channel).then((found) => alive && setAvail(found ? 'on' : 'off'));
+      // Also compare the streams' own labels with the official listing (for the panel's warning).
+      nowNext(access, channel, true)
+        .then((v) => alive && setInfo(v))
+        .catch(() => undefined);
     }, 600);
     return () => {
       alive = false;

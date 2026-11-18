@@ -21,7 +21,8 @@ export interface DetailProps {
   type: string;
   id: string;
   preview?: MetaPreview;
-  play: (meta: MetaDetail, video: Video | null) => void;
+  /** `fromStart` ignores the saved position (Start Over). */
+  play: (meta: MetaDetail, video: Video | null, fromStart?: boolean) => void;
   openStreams: (meta: MetaDetail, video: Video | null) => void;
   onBack: () => void;
 }
@@ -57,6 +58,15 @@ const EpisodeCard = ({video, progress, onPress, preferred}: {video: Video; progr
     </TouchableOpacity>
   );
 };
+
+/** 1:23:04 / 6:00 */
+function clockOf(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+}
 
 export const Detail = ({state, type, id, preview, play, openStreams, onBack}: DetailProps) => {
   const [meta, setMeta] = useState<MetaDetail | null>(preview ? ({...preview} as MetaDetail) : null);
@@ -171,10 +181,11 @@ export const Detail = ({state, type, id, preview, play, openStreams, onBack}: De
   const resumeAt = localResume && accountResume ? (localResume.position >= accountResume.position ? localResume : accountResume) : localResume || accountResume;
   const resuming = !!resumeAt && resumeAt.position > 30 && (!resumeAt.duration || resumeAt.position < resumeAt.duration - 60);
   const inContinueWatching = resuming || (libraryEntry?.state.timeOffset || 0) > 0;
+  const resumeFrom = resuming && resumeAt ? ` from ${clockOf(resumeAt.position)}` : '';
   const playLabel = isSeries && target
-    ? `${resuming ? 'Resume' : 'Play'} S${target.season ?? 0}:E${target.episode ?? target.number ?? 1}`
+    ? `${resuming ? 'Resume' : 'Play'} S${target.season ?? 0}:E${target.episode ?? target.number ?? 1}${resumeFrom}`
     : resuming
-    ? 'Resume'
+    ? `Resume${resumeFrom}`
     : 'Play';
   const facts = [yearOf(meta) || meta.year, meta.runtime, meta.imdbRating ? `★ ${meta.imdbRating}` : '', isSeries && seasons.filter((s) => s > 0).length ? `${seasons.filter((s) => s > 0).length} Seasons` : '']
     .filter(Boolean)
@@ -201,6 +212,7 @@ export const Detail = ({state, type, id, preview, play, openStreams, onBack}: De
         </Text>
         <View style={styles.actions}>
           <Pill label={`▶  ${playLabel}`} primary hasTVPreferredFocus onPress={() => play(meta, target)} />
+          {resuming ? <Pill label="↺  Start Over" onPress={() => play(meta, target, true)} /> : null}
           {state.session ? (
             <Pill label={state.inMyList(meta.id) ? '✓  My List' : '+  My List'} onPress={() => state.toggleMyList({id: meta.id, type: meta.type || type, name: meta.name, poster: meta.poster})} />
           ) : null}

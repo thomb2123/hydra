@@ -203,6 +203,8 @@ cloud workspace can't reach).
 - **Stick only (18 Nov):** `STICK_ONLY` in `state.ts`: the PC streaming server is never looked for (no network scan) or used, a saved PC address is ignored, Settings says no PC is needed. Checked: Avengers: Endgame played in 4K HDR10+ with subtitles, log "server=not set" and no request to the PC; live TV unaffected. Away from home the stick only needs Wi-Fi.
 - **Double zap fixed:** a key press that changes screen (▼ rebuilding the player) was counted again when the new screen saw the key release; key-down times are now shared app-wide (`shared/src/tv/remote.ts`). Checked: one ▼ = one channel.
 
+- **Polish (18 Nov, late):** guide rows read only the official listing (one cached request); the streams' own labels are compared only for the channel rested on (0.6 s) and in the player's Sources, so scrolling makes ~4x fewer network calls (checked: 10 fast ▼ = 10 channels, listings already shown). Back from a title page returns focus to the card that opened it (`Browse` remembers row + title; checked on Continue Watching). Title pages show "Resume from 6:00" and a Start Over button (not yet tried on the TV).
+
 ## Open issues (in priority order)
 
 1. **About 5 minutes into a film, playback stalled** (engine only; films now play in the
