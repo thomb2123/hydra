@@ -289,3 +289,70 @@ describe('guide programme tags', () => {
     expect(programmeTag('Live 1st Test Day 4', null, now)).toBe('LIVE');
   });
 });
+
+describe('official Sky guide', () => {
+  const {parseSchedule, pickNowNext, SKY_SID} = require('../src/tv/skyGuide');
+  const {sameProgramme, withOfficial, nowTag, displayTitle} = require('../src/tv/epg');
+  const {CHANNELS} = require('../src/tv/lineup');
+  const sample = {
+    schedule: [
+      {
+        sid: '4002',
+        events: [
+          {st: 1000, d: 3600, t: 'Live Grand Slam Of Darts', sy: 'Day four of the Grand Slam of Darts.'},
+          {st: 4600, d: 3600, t: 'Sky Sports News', sy: 'Round-up of the sports news.'},
+          {st: 8200, d: 7200, t: 'Bundesliga: Dortmund v Bayern', sy: 'From Saturday.'},
+        ],
+      },
+    ],
+  };
+
+  it('reads titles, synopses, times and Sky live labels', () => {
+    const list = parseSchedule(sample);
+    expect(list).toHaveLength(3);
+    expect(list[0]).toMatchObject({title: 'Live Grand Slam Of Darts', start: 1000, end: 4600, live: true, description: 'Day four of the Grand Slam of Darts.'});
+    expect(list[1].live).toBe(false);
+    expect(pickNowNext(list, 5000).now.title).toBe('Sky Sports News');
+    expect(pickNowNext(list, 5000).next.title).toMatch(/Dortmund/);
+    expect(pickNowNext(list, 500).now).toBeNull();
+  });
+
+  it('maps only channels that exist in the line-up', () => {
+    const ids = new Set(CHANNELS.map((c: any) => c.id));
+    for (const id of Object.keys(SKY_SID)) {
+      expect(ids.has(id)).toBe(true);
+    }
+    expect(SKY_SID['uk-ss-main']).toBe('4002');
+  });
+
+  it('compares listings from different guides', () => {
+    expect(sameProgramme('Live Grand Slam Of Darts', 'Grand Slam of Darts: Day 4')).toBe(true);
+    expect(sameProgramme('LIVE: Sky Sports News', 'Sky Sports News')).toBe(true);
+    expect(sameProgramme('Live Bundesliga: Dortmund v Bayern', 'Sky Sports News')).toBe(false);
+  });
+
+  it('prefers the official guide and flags a stream labelled as something else', () => {
+    const sky = {now: {title: 'Live Grand Slam Of Darts', start: 1, end: 2, live: true}, next: null};
+    const results = [
+      {id: 'a', epg: {now: {title: 'Bundesliga: Dortmund v Bayern'}}},
+      {id: 'b', epg: {now: {title: 'Grand Slam of Darts'}}},
+    ];
+    const v = withOfficial({now: {title: 'Bundesliga: Dortmund v Bayern'}, next: null, outliers: []}, sky, results);
+    expect(v.official).toBe(true);
+    expect(v.now.title).toBe('Live Grand Slam Of Darts');
+    expect(v.streamSays).toBe('Bundesliga: Dortmund v Bayern');
+    expect(v.outliers).toEqual(['a']);
+    expect(withOfficial({now: {title: 'X'}, next: null, outliers: []}, null, results).official).toBeUndefined();
+  });
+
+  it('tags live and re-run matches from the official guide', () => {
+    const live = {now: {title: 'Live Grand Slam Of Darts', live: true}, outliers: [], official: true};
+    const rerun = {now: {title: 'Bundesliga: Dortmund v Bayern', live: false}, outliers: [], official: true};
+    const studio = {now: {title: 'Sky Sports News', live: false}, outliers: [], official: true};
+    expect(nowTag(live, true)).toBe('LIVE');
+    expect(nowTag(rerun, true)).toBe('REPLAY');
+    expect(nowTag(studio, true)).toBeNull();
+    expect(nowTag(rerun, false)).toBeNull();
+    expect(displayTitle(live.now)).toBe('Grand Slam Of Darts');
+  });
+});

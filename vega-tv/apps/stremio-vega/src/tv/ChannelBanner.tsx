@@ -4,7 +4,7 @@
 import React from 'react';
 import {Image, StyleSheet, Text, View} from 'react-native';
 import {brand, type} from '../ui/brand';
-import {NowNext, cleanTitle, progressOf, timeRange} from './epg';
+import {NowNext, displayTitle, nowTag, progressOf, timeRange} from './epg';
 
 export interface BannerProps {
   number?: number;
@@ -16,12 +16,15 @@ export interface BannerProps {
   fallbackTitle?: string;
   /** Small status line, e.g. "Tuning…". */
   status?: string;
+  /** A sports channel (a match the official guide does not list as live is a re-run). */
+  sport?: boolean;
 }
 
-export const ChannelBanner = ({number, name, logo, badge, info, fallbackTitle, status}: BannerProps) => {
+export const ChannelBanner = ({number, name, logo, badge, info, fallbackTitle, status, sport}: BannerProps) => {
   const now = info?.now;
   const next = info?.next;
-  const nowTitle = now?.title ? cleanTitle(now.title) : fallbackTitle || '';
+  const nowTitle = now?.title ? displayTitle(now) : fallbackTitle || '';
+  const tag = nowTag(info, !!sport);
   return (
     <View style={styles.wrap} pointerEvents="none">
       <View style={styles.shade} />
@@ -43,6 +46,7 @@ export const ChannelBanner = ({number, name, logo, badge, info, fallbackTitle, s
           </View>
           <Text style={styles.nowLine} numberOfLines={1}>
             {now?.title ? <Text style={styles.time}>{`${timeRange(now)}   `}</Text> : null}
+            {tag ? <Text style={tag === 'LIVE' ? styles.tagLive : styles.tagReplay}>{tag === 'LIVE' ? 'LIVE  ' : 'REPLAY  '}</Text> : null}
             {nowTitle || 'No listings available'}
           </Text>
           {now?.start ? (
@@ -55,10 +59,15 @@ export const ChannelBanner = ({number, name, logo, badge, info, fallbackTitle, s
               {now.description}
             </Text>
           ) : null}
+          {info?.streamSays ? (
+            <Text style={styles.warn} numberOfLines={1}>
+              {`Sky guide says this; the stream is labelled "${info.streamSays}". If the picture differs, press ☰ for Sources.`}
+            </Text>
+          ) : null}
           {next?.title ? (
             <Text style={styles.next} numberOfLines={1}>
               <Text style={styles.nextLabel}>Next   </Text>
-              {`${timeRange(next).split('–')[0]}   ${cleanTitle(next.title)}`}
+              {`${timeRange(next).split('–')[0]}   ${displayTitle(next)}`}
             </Text>
           ) : null}
         </View>
@@ -90,4 +99,7 @@ const styles = StyleSheet.create({
   desc: {color: brand.textSoft, fontSize: type.small, marginTop: 12, marginRight: 120},
   next: {color: brand.textMuted, fontSize: type.body, marginTop: 12},
   nextLabel: {color: brand.textMuted, fontWeight: '800'},
+  tagLive: {color: '#ff4d5e', fontWeight: '900'},
+  tagReplay: {color: brand.textMuted, fontWeight: '900'},
+  warn: {color: '#ffb547', fontSize: type.small, marginTop: 10},
 });

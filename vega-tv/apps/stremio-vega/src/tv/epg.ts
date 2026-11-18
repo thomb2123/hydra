@@ -1,14 +1,23 @@
 // Now/next programme info per merged channel. Providers sometimes attach the
 // wrong guide to a channel (e.g. Sky Sports News programmes on "Main Event"),
 // so up to three sources are asked and the majority title wins.
+// For channels Sky carries, Sky's official listings come first (see skyGuide.ts).
 import * as fx from './flixnest';
 import {MergedChannel} from './channels';
+import {skyNowNext} from './skyGuide';
+import type {ProgrammeTag} from './scores';
 
 export interface NowNext {
   now?: fx.Programme | null;
   next?: fx.Programme | null;
-  /** Source ids whose guide disagreed with the majority (possible mislabels). */
+  /** Source ids whose guide disagreed with the majority, or with the official guide (possible mislabels). */
   outliers: string[];
+  /** now/next come from the official Sky guide. */
+  official?: boolean;
+  /** What the streams' own guide says is on, when it is not what the official guide says. */
+  streamSays?: string;
+  /** Each checked source's own guide title for now, by source id. */
+  sourceNow?: Record<string, string>;
 }
 
 const TTL_MS = 5 * 60 * 1000;
@@ -41,6 +50,88 @@ export function pickConsensus(results: {id: string; epg: fx.Epg}[]): NowNext {
   return {now: chosen.epg.now, next: chosen.epg.next, outliers};
 }
 
+const STOP = new Set(['live', 'with', 'from', 'the', 'and', 'sky', 'sports', 'sport', 'news', 'tnt', 'new', 'episode', 'series', 'season']);
+const words = (t?: string) => new Set(cleanTitle(t).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !STOP.has(w)));
+
+/** Two listings name the same programme (wording differs between guides: "Live Grand Slam Of Darts" / "Grand Slam of Darts: Day 4"). */
+export function sameProgramme(a?: string, b?: string): boolean {
+  const na = norm(a).replace(/^live/, '');
+  const nb = norm(b).replace(/^live/, '');
+  if (!na || !nb) {
+    return false;
+  }
+  if (na === nb || na.includes(nb) || nb.includes(na)) {
+    return true;
+  }
+  const wa = words(a);
+  const wb = words(b);
+  let shared = 0;
+  wa.forEach((w) => wb.has(w) && shared++);
+  return shared >= Math.min(2, wa.size, wb.size) && shared > 0;
+}
+
+/**
+ * The official guide (Sky) is what the channel should be showing; the stream
+ * providers' own guides are kept only to point out a stream that is labelled
+ * as something else (a different feed, or the provider's guide is wrong).
+ */
+export function withOfficial(
+  fromStreams: NowNext,
+  sky: {now: fx.Programme | null; next: fx.Programme | null} | null,
+  results: {id: string; epg: fx.Epg}[],
+): NowNext {
+  const sourceNow: Record<string, string> = {};
+  for (const r of results) {
+    if (r.epg?.now?.title) {
+      sourceNow[r.id] = cleanTitle(r.epg.now.title);
+    }
+  }
+  if (!sky || !sky.now) {
+    return {...fromStreams, sourceNow};
+  }
+  const streamTitle = fromStreams.now?.title;
+  const differs = !!streamTitle && !sameProgramme(streamTitle, sky.now.title);
+  return {
+    now: sky.now,
+    next: sky.next,
+    official: true,
+    outliers: Object.entries(sourceNow).filter(([, t]) => !sameProgramme(t, sky.now!.title)).map(([id]) => id),
+    streamSays: differs ? cleanTitle(streamTitle) : undefined,
+    sourceNow,
+  };
+}
+
+/** Title for display: a live programme loses its "Live" prefix (the LIVE tag says it). */
+export function displayTitle(p?: fx.Programme | null): string {
+  const t = cleanTitle(p?.title);
+  return p?.live ? t.replace(/^live\s+(?:[:|-]\s*)?/i, '') : t;
+}
+
+const FIXTURE = /\s(?:v|vs\.?|@)\s/i;
+
+/**
+ * LIVE / REPLAY for what is on now. With the official guide, Sky's own "Live"
+ * label decides; a match on a sports channel that Sky does not list as live is a
+ * re-run. Without it, the title and live scores are judged (tagFor).
+ */
+export function nowTag(info: NowNext | null | undefined, sportChannel: boolean, tagFor?: (title: string) => ProgrammeTag): ProgrammeTag {
+  const p = info?.now;
+  if (!p?.title) {
+    return null;
+  }
+  const judged = tagFor ? tagFor(p.title) : null;
+  if (!info!.official) {
+    return judged;
+  }
+  if (p.live) {
+    return 'LIVE';
+  }
+  if (judged === 'REPLAY' || (sportChannel && FIXTURE.test(p.title))) {
+    return 'REPLAY';
+  }
+  return null;
+}
+
 export function cachedNowNext(channel: MergedChannel): NowNext | null {
   const hit = cache.get(channel.id);
   return hit && Date.now() - hit.at < TTL_MS ? hit.value : null;
@@ -58,10 +149,11 @@ export async function nowNext(access: fx.Access, channel: MergedChannel): Promis
   const task = (async () => {
     const withGuide = channel.sources.filter((s) => s.epgId).slice(0, 3);
     const candidates = withGuide.length ? withGuide : channel.sources.slice(0, 2);
-    const results = await Promise.all(
-      candidates.map(async (s) => ({id: s.id, epg: await fx.epg(access, s.id).catch(() => ({}) as fx.Epg)})),
-    );
-    const value = pickConsensus(results);
+    const [sky, results] = await Promise.all([
+      skyNowNext(channel.id).catch(() => null),
+      Promise.all(candidates.map(async (s) => ({id: s.id, epg: await fx.epg(access, s.id).catch(() => ({}) as fx.Epg)}))),
+    ]);
+    const value = withOfficial(pickConsensus(results), sky, results);
     cache.set(channel.id, {at: Date.now(), value});
     return value;
   })().finally(() => inflight.delete(channel.id));

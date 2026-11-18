@@ -12,7 +12,7 @@ import {Pill} from '../ui/Cards';
 import {brand, type} from '../ui/brand';
 import * as fx from '../tv/flixnest';
 import {MergedChannel, Source} from '../tv/channels';
-import {NowNext, nowNext} from '../tv/epg';
+import {NowNext, displayTitle, nowNext} from '../tv/epg';
 import {recordResult} from '../tv/guide';
 import {probeStream} from '../tv/probe';
 import {Status, cachedStatus, checkSource, firstLive, heightOf, markFailed, prefetchChannel} from '../tv/tune';
@@ -267,6 +267,7 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
       logo={feeds ? undefined : channel?.logo}
       badge={badge}
       info={feeds ? null : info}
+      sport={!!channel && (channel.category === 'uk-sport' || channel.category === 'us-sport')}
       fallbackTitle={feeds ? title : undefined}
       status={!source ? note || 'Tuning…' : undefined}
     />
@@ -275,7 +276,11 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
   const sourcesPanel = panel ? (
     <View style={styles.panel}>
       <Text style={styles.panelTitle}>Sources · {name}</Text>
-      <Text style={styles.panelHint}>Chosen automatically. Pick another if this one looks wrong.</Text>
+      <Text style={styles.panelHint}>
+        {info?.official && info.now?.title
+          ? `Should be showing (Sky guide): ${displayTitle(info.now)}. Pick another source if the picture differs.`
+          : 'Chosen automatically. Pick another if this one looks wrong.'}
+      </Text>
       <FlatList
         data={sources}
         keyExtractor={(s) => s.id}
@@ -284,6 +289,8 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
             label={`Source ${i + 1}`}
             quality={statuses[item.id]?.resolution ? describeResolution(statuses[item.id]!.resolution!) : qualityLabel(item.quality)}
             status={item.id === playing?.id && source ? 'Playing' : describe(statuses[item.id] || cachedStatus(item) || undefined)}
+            guide={info?.sourceNow?.[item.id]}
+            guideOk={info?.official ? !info.outliers.includes(item.id) : undefined}
             preferred={item.id === playing?.id || (!playing && i === 0)}
             onPress={() => choose(item)}
           />
@@ -364,7 +371,7 @@ function describe(s?: Status): string {
   }
 }
 
-const SourceRow = ({label, quality, status, preferred, onPress}: {label: string; quality: string; status: string; preferred: boolean; onPress: () => void}) => {
+const SourceRow = ({label, quality, status, guide, guideOk, preferred, onPress}: {label: string; quality: string; status: string; guide?: string; guideOk?: boolean; preferred: boolean; onPress: () => void}) => {
   const [focused, setFocused] = useState(false);
   const good = status === 'Playing' || status === 'Live';
   return (
@@ -375,9 +382,18 @@ const SourceRow = ({label, quality, status, preferred, onPress}: {label: string;
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       style={[styles.srcRow, focused && styles.srcRowFocused]}>
-      <Text style={[styles.srcLabel, focused && styles.dark]}>{label}</Text>
-      <Text style={[styles.srcQuality, focused && styles.dark]}>{quality}</Text>
-      <Text style={[styles.srcStatus, good && styles.ok, focused && styles.dark]}>{status}</Text>
+      <View style={styles.srcMain}>
+        <View style={styles.srcTop}>
+          <Text style={[styles.srcLabel, focused && styles.dark]}>{label}</Text>
+          <Text style={[styles.srcQuality, focused && styles.dark]}>{quality}</Text>
+          <Text style={[styles.srcStatus, good && styles.ok, focused && styles.dark]}>{status}</Text>
+        </View>
+        {guide ? (
+          <Text numberOfLines={1} style={[styles.srcGuide, guideOk === true && styles.ok, guideOk === false && styles.warn, focused && styles.dark]}>
+            {`${guideOk === true ? '✓ ' : guideOk === false ? '✗ ' : ''}Its guide: ${guide}`}
+          </Text>
+        ) : null}
+      </View>
     </TouchableOpacity>
   );
 };
@@ -398,5 +414,9 @@ const styles = StyleSheet.create({
   srcQuality: {color: brand.textSoft, fontSize: type.small, width: 170},
   srcStatus: {color: brand.textMuted, fontSize: type.small, flex: 1, textAlign: 'right'},
   ok: {color: brand.match},
+  warn: {color: '#ffb547'},
+  srcMain: {flex: 1},
+  srcTop: {flexDirection: 'row', alignItems: 'center'},
+  srcGuide: {color: brand.textMuted, fontSize: type.tiny, marginTop: 4},
   dark: {color: '#000'},
 });

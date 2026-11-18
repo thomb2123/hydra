@@ -29,6 +29,8 @@ export interface Programme {
   description?: string;
   start?: number;
   end?: number;
+  /** Set by the official Sky guide: listed as live. */
+  live?: boolean;
 }
 
 export interface Epg {

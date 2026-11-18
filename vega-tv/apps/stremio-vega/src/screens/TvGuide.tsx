@@ -10,7 +10,7 @@ import {Pill} from '../ui/Cards';
 import {brand, edge, type} from '../ui/brand';
 import {CATEGORIES} from '../tv/lineup';
 import {MergedChannel} from '../tv/channels';
-import {NowNext, cachedNowNext, cleanTitle, nowNext, progressOf, timeRange} from '../tv/epg';
+import {NowNext, cachedNowNext, cleanTitle, displayTitle, nowNext, nowTag, progressOf, timeRange} from '../tv/epg';
 import {LIVE_NOW_ID, SportEvent} from '../tv/events';
 import {ProgrammeTag} from '../tv/scores';
 import {prefetchChannel} from '../tv/tune';
@@ -91,6 +91,10 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
   }, []);
   const access = tv.access;
   const tagFor = tv.programmeTag;
+  // The focused channel's programme details go to a fixed panel above the list
+  // (through a ref, so rows and the list never re-render or change height).
+  const detailsRef = useRef<((d: Details | null) => void) | null>(null);
+  const showDetails = useCallback((d: Details | null) => detailsRef.current?.(d), []);
   const renderChannel = useCallback(
     ({item, index}: {item: MergedChannel; index: number}) => (
       <ChannelRow
@@ -99,11 +103,12 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
         preferred={index === resumeIndex}
         liveTitle={liveOnRef.current.get(item.id)}
         onFocused={markSettled}
+        onDetails={showDetails}
         tagFor={tagFor}
         onPress={() => playChannel(item, list)}
       />
     ),
-    [access, resumeIndex, markSettled, playChannel, list, tagFor],
+    [access, resumeIndex, markSettled, playChannel, list, tagFor, showDetails],
   );
   const renderEvent = useCallback(
     ({item, index}: {item: SportEvent; index: number}) => <EventRow event={item} preferred={index === resumeEvent} onFocused={markSettled} onPress={() => playEvent(item)} />,
@@ -196,6 +201,9 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
               renderItem={renderEvent}
             />
           ) : (
+            <DetailsPanel register={detailsRef} />
+          )}
+          {active === SPORT_ID ? null : (
             <FlatList
               key={active}
               data={list}
@@ -252,9 +260,47 @@ const Clock = () => {
   );
 };
 
+interface Details {
+  channel: MergedChannel;
+  info: NowNext | null;
+  tag: ProgrammeTag;
+}
+
+/** What the focused channel is showing: title, synopsis and whose guide it is. Fixed height. */
+const DetailsPanel = ({register}: {register: React.MutableRefObject<((d: Details | null) => void) | null>}) => {
+  const [d, setD] = useState<Details | null>(null);
+  useEffect(() => {
+    register.current = setD;
+    return () => {
+      register.current = null;
+    };
+  }, [register]);
+  const now = d?.info?.now;
+  const source = !d || !now?.title ? '' : d.info!.official ? 'Sky guide' : "Channel's own guide";
+  return (
+    <View style={styles.details}>
+      <View style={styles.rowTop}>
+        <Text numberOfLines={1} style={styles.detailsTitle}>
+          {d?.tag ? <Text style={d.tag === 'LIVE' ? styles.tagLive : styles.tagReplay}>{d.tag === 'LIVE' ? 'LIVE  ' : 'REPLAY  '}</Text> : null}
+          {now?.title ? displayTitle(now) : d ? d.channel.name : ' '}
+        </Text>
+        <Text style={styles.detailsSource}>{source}</Text>
+      </View>
+      <Text numberOfLines={2} style={styles.detailsDesc}>
+        {now?.description || (d && now?.title ? `${timeRange(now)} on ${d.channel.name}` : d ? 'No listings for this channel right now.' : ' ')}
+      </Text>
+      <Text numberOfLines={1} style={styles.detailsWarn}>
+        {d?.info?.streamSays ? `The stream is labelled "${d.info.streamSays}". If the picture differs, open Sources while watching.` : ' '}
+      </Text>
+    </View>
+  );
+};
+
 type Avail = 'unknown' | 'checking' | 'on' | 'off';
 
-export const ChannelRow = memo(({access, channel, preferred, liveTitle, onFocused, tagFor, onPress}: {access: fx.Access; channel: MergedChannel; preferred?: boolean; liveTitle?: string; onFocused?: () => void; tagFor?: (title: string) => ProgrammeTag; onPress: () => void}) => {
+const SPORT_CATEGORIES = new Set(['uk-sport', 'us-sport']);
+
+export const ChannelRow = memo(({access, channel, preferred, liveTitle, onFocused, onDetails, tagFor, onPress}: {access: fx.Access; channel: MergedChannel; preferred?: boolean; liveTitle?: string; onFocused?: () => void; onDetails?: (d: Details | null) => void; tagFor?: (title: string) => ProgrammeTag; onPress: () => void}) => {
   const [focused, setFocused] = useState(false);
   const [avail, setAvail] = useState<Avail>('unknown');
   const [info, setInfo] = useState<NowNext | null>(() => cachedNowNext(channel));
@@ -289,8 +335,13 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, onFocuse
   const next = info?.next;
   const progress = progressOf(now);
   // LIVE / REPLAY next to what is on, so a re-run is obvious before choosing the channel.
-  const tag = now?.title && tagFor ? tagFor(now.title) : null;
-  const nowText = now?.title ? `${timeRange(now)}  ${cleanTitle(now.title)}` : liveTitle ? `Live  ${liveTitle}` : info ? 'No listings available' : ' ';
+  const tag = nowTag(info, SPORT_CATEGORIES.has(channel.category), tagFor);
+  const nowText = now?.title ? `${timeRange(now)}  ${displayTitle(now)}` : liveTitle ? `Live  ${liveTitle}` : info ? 'No listings available' : ' ';
+  useEffect(() => {
+    if (focused) {
+      onDetails?.({channel, info, tag});
+    }
+  }, [focused, info, tag, channel, onDetails]);
   return (
     <TouchableOpacity
       activeOpacity={1}
@@ -474,6 +525,11 @@ const styles = StyleSheet.create({
   tagReplay: {color: brand.textMuted, fontWeight: '900'},
   nowTitle: {color: brand.textSoft, fontSize: type.small + 1, marginTop: 4},
   desc: {color: brand.textMuted, fontSize: type.tiny, marginTop: 4},
+  details: {height: 132, backgroundColor: brand.surface, borderRadius: 10, paddingHorizontal: 22, paddingVertical: 14, marginBottom: 12, marginHorizontal: 3},
+  detailsTitle: {flex: 1, color: brand.text, fontSize: type.body + 2, fontWeight: '800'},
+  detailsSource: {color: brand.textMuted, fontSize: type.tiny, fontWeight: '700', marginLeft: 16},
+  detailsDesc: {color: brand.textSoft, fontSize: type.small, marginTop: 6, lineHeight: type.small + 8},
+  detailsWarn: {color: '#ffb547', fontSize: type.tiny, marginTop: 4},
   progressTrack: {height: 4, backgroundColor: brand.surfaceRaised, borderRadius: 2, marginTop: 8, marginRight: 40},
   progressFill: {height: 4, backgroundColor: brand.accent, borderRadius: 2},
   nextTitle: {color: brand.textMuted, fontSize: type.tiny + 1, marginTop: 6},

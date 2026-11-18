@@ -144,6 +144,16 @@ cloud workspace can't reach).
 - **Guide navigation:** `TVFocusGuideView` (left returns to the current category, right to
   the last channel), category switch debounced, no focus grabbing after the first view.
 
+- **Official guide (`tv/skyGuide.ts`):** for the 74 UK channels Sky carries, now/next comes
+  from Sky's own listings (`awk.epgsky.com/hawk/linear/schedule/{YYYYMMDD}/{sid}`, reachable
+  from the stick in ~0.1 s, cached 30 min), with synopses. Sky titles live shows "Live …", so
+  LIVE is Sky's word; a match on a sports channel that Sky does not list as live is tagged
+  REPLAY. The providers' own guides are still read: when they disagree with Sky, the guide's
+  details panel and the player banner say what the stream is labelled as, and Sources (☰)
+  marks each source's guide ✓/✗. Live Now's channel check uses the same official listings.
+  Sky renamed channels: Sky Max and Sky Showcase are Sky One (4061); Sky Sports Action, Arena
+  and Darts, and Sky Cinema Hits, Animation and Select, have no Sky listing.
+
 ## Open issues (in priority order)
 
 1. **About 5 minutes into a film, playback stalled** (engine only; films now play in the
