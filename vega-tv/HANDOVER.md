@@ -239,6 +239,13 @@ cloud workspace can't reach).
   - **Search bar** redesigned (rounded field, drawn magnifier, blinking cursor, hint line, rounded keys). **Live TV guide** restyled (purple marker on the current category, live count with blinking dot next to Live Now, purple outline on the focused row, coloured edge on the info panel, red when live); the info panel now clears when the category changes (it kept the last channel's programme).
   - Measured after the changes: Home 10 fast moves, no stutter; guide 10 channels, no stutter (0.15–0.2 s on category switches); opening the Live TV tab ~1.4 s in 4 blocks; opening a title page 0.2–0.4 s.
 
+- **Intro, Categories, sound switch (18 Nov, ~23:55):**
+  - The intro stuttered because the 470 px "S" had a 40 px text shadow (and the streaks box shadows) re-rendered every frame while scaling to 14x. Without blurs (glow faked with two flat circles), a 3.5x push-in and the Live TV data load waiting for the intro (`ui/introGate.ts`), the intro logs **"118 frames in 2001 ms (59 fps)"** on the stick.
+  - Categories: tiles show the backdrop of each genre's top title (a different title per genre, `genreCover` in `stremio/recommend.ts`, three requests at a time), tinted in the genre colour with a stripe and a smooth bottom fade; the focused tile names the title. Genre pages have a cover banner. Opening Categories: one 0.34 s block. (Unique covers and the fade were made after the last screenshot; built and installed, not yet seen on the TV.)
+  - Settings › Start-up sound On/Off (`ui/soundKeys.ts`; the intro reads it before playing).
+  - Menu sounds are now released as soon as a film starts loading (`starting` route), not when its player appears.
+  - **Not verified yet (stick not used overnight: sounds and TV wake-ups):** a film and a live channel actually playing with the menu-sound build (audio players released first); the menu sounds and intro sound by ear; the genre page banner.
+
 ## Open issues (in priority order)
 
 1. **About 5 minutes into a film, playback stalled** (engine only; films now play in the
