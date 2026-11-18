@@ -206,12 +206,14 @@ const EventRow = ({event, onPress}: {event: SportEvent; onPress: () => void}) =>
 };
 
 /** FlixNest sign-in by phone: shows a code + QR; the viewer approves on their phone. */
-const TvConnect = ({tv}: {tv: TvState}) => {
+export const TvConnect = ({tv, onDone}: {tv: TvState; onDone?: () => void}) => {
   const [code, setCode] = useState('');
   const [status, setStatus] = useState('Getting a code…');
   const gen = useRef(0);
   const connectRef = useRef(tv.connect);
   connectRef.current = tv.connect;
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
   const start = useCallback(() => {
     const current = ++gen.current;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -241,6 +243,7 @@ const TvConnect = ({tv}: {tv: TvState}) => {
             if (r.status === 'approved' && r.access && r.access.type === 'account') {
               setStatus('Approved. Setting up your channels…');
               await connectRef.current({type: 'account', scope: r.access.scope});
+              onDoneRef.current?.();
               return;
             }
           } catch {

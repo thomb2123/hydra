@@ -8,12 +8,17 @@ import {requestJson} from '../../../../shared/src/net';
 import * as api from '../stremio/api';
 import {normaliseServerUrl} from '../stremio/streaming';
 import {StremioState} from '../state';
+import {TvState} from '../tv/useTv';
+import {TvConnect} from './TvGuide';
+import {resetReliability} from '../tv/guide';
 
 const CODE_LIFETIME_MS = 5 * 60 * 1000;
 const POLL_MS = 3000;
 
-export const Settings = ({state, onBack}: {state: StremioState; onBack: () => void}) => {
+export const Settings = ({state, tv, onBack}: {state: StremioState; tv: TvState; onBack: () => void}) => {
   const [mode, setMode] = useState<'menu' | 'code' | 'email'>('menu');
+  const [pairing, setPairing] = useState(false);
+  const [tvNote, setTvNote] = useState<string | null>(null);
   const [server, setServer] = useState(state.server.replace(/^http:\/\//, ''));
   const [serverStatus, setServerStatus] = useState<string | null>(null);
 
@@ -70,6 +75,30 @@ export const Settings = ({state, onBack}: {state: StremioState; onBack: () => vo
             <FocusButton label="Sign in with a code (phone)" subtitle="Recommended: no typing on the TV" hasTVPreferredFocus onPress={() => setMode('code')} />
             <FocusButton label="Sign in with email" subtitle="Uses the on-screen keyboard" onPress={() => setMode('email')} />
           </View>
+        </View>
+      )}
+
+      <Text style={styles.heading}>Live TV (FlixNest)</Text>
+      {pairing ? (
+        <View style={styles.pairBox}>
+          <TvConnect tv={tv} onDone={() => { setPairing(false); setTvNote('Connected. Your channel list is being refreshed.'); }} />
+          <FocusButton label="Cancel" compact onPress={() => setPairing(false)} />
+        </View>
+      ) : (
+        <View>
+          <Text style={styles.text}>
+            {tv.access
+              ? `Connected. ${tv.guide ? `${tv.guide.channels.length} channels, list updated ${new Date(tv.guide.builtAt).toLocaleString()}.` : 'Channel list not built yet.'}${tv.building ? ' Updating now…' : ''}`
+              : 'Not connected. Live TV needs your FlixNest account (approve a code on your phone).'}
+          </Text>
+          <View style={styles.row}>
+            <FocusButton label={tv.access ? 'Reconnect (new code)' : 'Connect FlixNest'} subtitle="Approve a code on your phone" onPress={() => setPairing(true)} />
+            {tv.access ? <FocusButton label="Refresh channel list" subtitle="Re-reads every provider" onPress={() => { setTvNote('Refreshing channels…'); tv.rebuild().then(() => setTvNote('Channel list refreshed.')); }} /> : null}
+            {tv.access ? <FocusButton label="Reset source choices" subtitle="Forget which sources failed" onPress={() => resetReliability().then(() => tv.refreshRanking()).then(() => setTvNote('Source history cleared.'))} /> : null}
+            {tv.access ? <FocusButton label="Sign out of FlixNest" compact onPress={() => tv.disconnect().then(() => setTvNote('Signed out of FlixNest on this TV.'))} /> : null}
+          </View>
+          {tvNote ? <Text style={styles.muted}>{tvNote}</Text> : null}
+          <Text style={styles.muted}>Live TV runs entirely on this stick; your PC is not needed for it.</Text>
         </View>
       )}
 
@@ -192,6 +221,7 @@ const EmailSignIn = ({state, onDone}: {state: StremioState; onDone: () => void})
 };
 
 const styles = StyleSheet.create({
+  pairBox: {height: 520},
   root: {flex: 1, backgroundColor: colors.background},
   content: {paddingHorizontal: safeArea.horizontal, paddingVertical: safeArea.vertical},
   title: {color: colors.text, fontSize: fonts.title, fontWeight: '800'},

@@ -158,6 +158,24 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, onExit,
     [log, name, playing, tune],
   );
 
+  // While watching: re-check the playing source; if the provider swaps it for a
+  // placeholder (maintenance clip / black screen) or it disappears, move on.
+  useEffect(() => {
+    if (!source || !playing) {
+      return undefined;
+    }
+    const url = source.url;
+    const timer = setInterval(async () => {
+      const probe = await probeStream(url);
+      if (probe.state !== 'live' && source.url === url) {
+        log(`tv ${name}: source went ${probe.state} while watching (${probe.why || ''})`);
+        onFailedRef.current('went off air');
+      }
+    }, 45000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, playing]);
+
   const onStarted = useCallback(() => {
     if (playing) {
       recordResult(playing, true)
@@ -165,6 +183,9 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, onExit,
         .catch(() => undefined);
     }
   }, [onRanked, playing]);
+
+  const onFailedRef = useRef(onFailed);
+  onFailedRef.current = onFailed;
 
   const zap = useCallback(
     (step: number) => {
@@ -259,6 +280,7 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, onExit,
         onExit={onExit}
         onLog={log}
         onFailed={onFailed}
+        onEnded={() => onFailed('stream ended')}
         onStarted={onStarted}
         onZap={feeds ? undefined : zap}
         onMenu={sources.length > 1 ? () => setPanel(true) : undefined}

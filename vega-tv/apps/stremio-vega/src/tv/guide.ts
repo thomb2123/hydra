@@ -31,6 +31,10 @@ export function isStale(guide: GuideData | null): boolean {
   return !guide || Date.now() - guide.builtAt > MAX_AGE_MS;
 }
 
+export async function resetReliability(): Promise<void> {
+  await saveJson(RELIABILITY_KEY, {provider: {}, failures: {}});
+}
+
 export async function loadReliability(): Promise<Reliability> {
   return loadJson<Reliability>(RELIABILITY_KEY, {provider: {}, failures: {}});
 }

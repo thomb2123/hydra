@@ -185,7 +185,7 @@ export const App = () => {
     case 'genre':
       return <GenrePage key={route.genre} state={state} genre={route.genre} onBack={pop} openMeta={openMeta} />;
     case 'settings':
-      return <Settings state={state} onBack={pop} />;
+      return <Settings state={state} tv={tv} onBack={pop} />;
     case 'tv':
       return tv.access ? (
         <TvPlayer
