@@ -127,6 +127,8 @@ export interface VideoScreenProps {
   preferredSubtitle?: string | null;
   /** Reports the viewer's subtitle choice (language, or null for off) so it can be remembered. */
   onSubtitleChosen?: (language: string | null) => void;
+  /** Subtitle text size multiplier (1 = standard). */
+  subtitleScale?: number;
   /**
    * Seeking failed on `fromUrl`: the caller should reopen `source.altUrl` starting at
    * `position`. Without this prop the player switches route internally.
@@ -337,7 +339,7 @@ const PanelRow = ({label, selected, onPress, preferred}: {label: string; selecte
 
 // ---------------------------------------------------------------------------
 
-export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, onPrevious, onFailed, onStarted, onMenu, inputLocked, chromeless, onInfo, onNext, nextLabel, preferredSubtitle, onSubtitleChosen, onRouteSwitched, onUseEngine, onTooSlow}: VideoScreenProps) => {
+export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, onPrevious, onFailed, onStarted, onMenu, inputLocked, chromeless, onInfo, onNext, nextLabel, preferredSubtitle, onSubtitleChosen, subtitleScale = 1, onRouteSwitched, onUseEngine, onTooSlow}: VideoScreenProps) => {
   const autoSubDone = useRef(false);
   const mkvRef = useRef<MkvSession | null>(null);
   const [embedded, setEmbeddedState] = useState<EmbeddedSubtitleTrack[]>([]);
@@ -1384,7 +1386,7 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
 
       {subText ? (
         <View style={[styles.subtitleBox, hud && !panel ? styles.subtitleRaised : null]} pointerEvents="none">
-          <Text style={styles.subtitleText}>{subText}</Text>
+          <Text style={subtitleScale === 1 ? styles.subtitleText : [styles.subtitleText, {fontSize: Math.round(50 * subtitleScale), lineHeight: Math.round(62 * subtitleScale)}]}>{subText}</Text>
         </View>
       ) : null}
 

@@ -9,13 +9,22 @@ import {MetaPreview} from '../stremio/types';
 export const CARD_W = 384;
 export const CARD_H = 216;
 
-function Art({uri, fallback, style}: {uri?: string; fallback?: string; style: any}) {
-  const [failed, setFailed] = useState(false);
-  const source = !failed && uri ? uri : fallback;
+/** Artwork, then the fallback image, then (both missing or broken) the title as text. */
+function Art({uri, fallback, style, label}: {uri?: string; fallback?: string; style: any; label?: string}) {
+  const [failed, setFailed] = useState(0); // 1: main image broke, 2: fallback broke too
+  const source = failed === 0 && uri ? uri : failed <= 1 && fallback && fallback !== uri ? fallback : undefined;
   if (!source) {
-    return <View style={[style, {backgroundColor: brand.surfaceRaised}]} />;
+    return (
+      <View style={[style, styles.artMissing]}>
+        {label ? (
+          <Text style={styles.artMissingText} numberOfLines={4}>
+            {label}
+          </Text>
+        ) : null}
+      </View>
+    );
   }
-  return <Image source={{uri: source}} style={style} resizeMode="cover" onError={() => !failed && setFailed(true)} />;
+  return <Image source={{uri: source}} style={style} resizeMode="cover" onError={() => setFailed((f) => (source === uri ? Math.max(f, 1) : 2))} />;
 }
 
 export interface CardProps {
@@ -75,7 +84,7 @@ export const RankedCard = ({meta, rank, onPress, onFocus, hasTVPreferredFocus}: 
       style={styles.ranked}>
       <Text style={[styles.rankNumber, rank >= 10 && styles.rankNumberWide]}>{rank}</Text>
       <View style={[styles.rankPoster, focused && styles.cardFocused]}>
-        <Art uri={meta.poster} fallback={backdropOf(meta, 'small')} style={styles.rankArt} />
+        <Art uri={meta.poster} fallback={backdropOf(meta, 'small')} style={styles.rankArt} label={meta.name} />
       </View>
     </TouchableOpacity>
   );
@@ -97,7 +106,11 @@ export const PosterCard = ({meta, onPress, onFocus, hasTVPreferredFocus}: CardPr
       }}
       onBlur={() => setFocused(false)}
       style={[styles.poster, focused && styles.cardFocused]}>
-      <Art uri={meta.poster} fallback={backdropOf(meta, 'small')} style={styles.posterArt} />
+      {/* Under the artwork: readable while the image loads (or if it never does). */}
+      <Text style={styles.posterBehind} numberOfLines={4}>
+        {meta.name}
+      </Text>
+      <Art uri={meta.poster} fallback={backdropOf(meta, 'small')} style={styles.posterArt} label={meta.name} />
       {focused ? (
         <Text style={styles.posterTitle} numberOfLines={1}>
           {meta.name}
@@ -162,6 +175,9 @@ export const NavTab = ({label, onPress, onFocus, active, hasTVPreferredFocus}: P
 };
 
 const styles = StyleSheet.create({
+  posterBehind: {position: 'absolute', left: 14, right: 14, top: 0, bottom: 0, textAlignVertical: 'center', paddingTop: 130, color: brand.textMuted, fontSize: type.small, fontWeight: '800', textAlign: 'center'},
+  artMissing: {backgroundColor: brand.surfaceRaised, justifyContent: 'center', alignItems: 'center', padding: 14},
+  artMissingText: {color: brand.textSoft, fontSize: type.small, fontWeight: '800', textAlign: 'center'},
   card: {
     width: CARD_W,
     height: CARD_H,
@@ -193,7 +209,7 @@ const styles = StyleSheet.create({
   rankPoster: {width: 184, height: 276, borderRadius: 8, overflow: 'hidden', borderWidth: 4, borderColor: 'transparent'},
   rankArt: {width: '100%', height: '100%'},
   poster: {width: 220, height: 330, margin: 12, borderRadius: 8, overflow: 'hidden', borderWidth: 4, borderColor: 'transparent', backgroundColor: brand.surface},
-  posterArt: {width: '100%', height: '100%'},
+  posterArt: {position: 'absolute', top: 0, left: 0, width: '100%', height: '100%'},
   posterTitle: {position: 'absolute', left: 0, right: 0, bottom: 0, padding: 8, color: brand.text, fontSize: type.tiny, fontWeight: '700', backgroundColor: 'rgba(0,0,0,0.7)'},
   pill: {
     paddingHorizontal: 34,

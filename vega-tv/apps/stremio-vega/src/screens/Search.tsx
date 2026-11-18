@@ -47,6 +47,7 @@ const Key = ({label, onPress, wide, preferred}: {label: string; onPress: () => v
 };
 
 const resultCache = new Map<string, MetaPreview[]>();
+const resultKey = (m: MetaPreview) => m.id;
 
 export const Search = ({state, openMeta, openGenre, onBack, channels = [], events = [], playChannel, playEvent}: SearchProps) => {
   const [query, setQuery] = useState('');
@@ -103,14 +104,42 @@ export const Search = ({state, openMeta, openGenre, onBack, channels = [], event
           }
         }
       }
-      resultCache.set(key, merged);
-      setResults(merged);
+      // Titles named with every typed word first (add-ons also return loose matches);
+      // results with no artwork are left out (they showed as blank tiles).
+      const words = key.split(/\s+/).filter(Boolean);
+      const named = (m: MetaPreview) => {
+        const name = String(m.name || '').toLowerCase();
+        return words.every((w) => name.includes(w));
+      };
+      const shown = merged.filter((m) => m.poster);
+      const ordered = [...shown.filter(named), ...shown.filter((m) => !named(m))];
+      resultCache.set(key, ordered);
+      setResults(ordered);
       setSearching(false);
     }, 450);
     return () => clearTimeout(timer);
   }, [text, catalogs]);
 
+  // Stable, so typing a letter does not redraw every poster already on screen.
+  const renderResult = useCallback(
+    ({item}: {item: MetaPreview}) => <PosterCard meta={item} onPress={() => openMeta(item.type || 'movie', item.id, item)} />,
+    [openMeta],
+  );
   const type_ = useCallback((ch: string) => setQuery((q) => (q + ch).slice(0, 40)), []);
+  // Built once: typing a letter does not redraw the 39 keys.
+  const keyboard = useMemo(
+    () => (
+      <View style={styles.keyboard}>
+        {KEYS.map((k, i) => (
+          <Key key={k} label={k.toUpperCase()} preferred={i === 0} onPress={() => type_(k)} />
+        ))}
+        <Key label="Space" wide onPress={() => type_(' ')} />
+        <Key label="Delete" wide onPress={() => setQuery((q) => q.slice(0, -1))} />
+        <Key label="Clear" wide onPress={() => setQuery('')} />
+      </View>
+    ),
+    [type_],
+  );
   const items = results ?? (popular || []);
   const heading = results ? (results.length ? `Results for "${text}"` : searching ? 'Searching…' : `No results for "${text}"`) : 'Popular right now';
 
@@ -123,14 +152,7 @@ export const Search = ({state, openMeta, openGenre, onBack, channels = [], event
           </Text>
           <View style={styles.caret} />
         </View>
-        <View style={styles.keyboard}>
-          {KEYS.map((k, i) => (
-            <Key key={k} label={k.toUpperCase()} preferred={i === 0} onPress={() => type_(k)} />
-          ))}
-          <Key label="Space" wide onPress={() => type_(' ')} />
-          <Key label="Delete" wide onPress={() => setQuery((q) => q.slice(0, -1))} />
-          <Key label="Clear" wide onPress={() => setQuery('')} />
-        </View>
+        {keyboard}
         {catalogs.length === 0 ? <Text style={styles.muted}>None of your add-ons support search.</Text> : null}
       </View>
 
@@ -161,12 +183,12 @@ export const Search = ({state, openMeta, openGenre, onBack, channels = [], event
         <FlatList
           data={items}
           numColumns={5}
-          keyExtractor={(m) => m.id}
+          keyExtractor={resultKey}
           initialNumToRender={10}
           windowSize={3}
           removeClippedSubviews
           contentContainerStyle={styles.grid}
-          renderItem={({item}) => <PosterCard meta={item} onPress={() => openMeta(item.type || 'movie', item.id, item)} />}
+          renderItem={renderResult}
         />
       </View>
     </View>
