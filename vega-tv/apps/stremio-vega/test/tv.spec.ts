@@ -107,3 +107,159 @@ describe('stream probe', () => {
     expect(classifyMediaPlaylist('<html>error</html>').state).toBe('dead');
   });
 });
+
+import {guideAgrees, isOnNow, liveNow} from '../src/tv/events';
+
+describe('live now is judged by the clock', () => {
+  const channels = mergeChannels(
+    collectSources([{provider: 'a', country: 'UK', entries: [{id: 'a:9', name: 'UK| TNT SPORTS 3 FHD', category: 'A: UK| SPORTS'}]}]),
+  );
+  const now = Math.floor(Date.now() / 1000);
+  const ev = (name: string, sport: string, status: string, start: number, extra: Record<string, unknown> = {}) => ({
+    name,
+    sport,
+    status,
+    start,
+    broadcasts: [{id: `x:${name}`, name: 'UK: TNT SPORTS 3 HD · Strong8K'}],
+    ...extra,
+  });
+
+  it("drops yesterday's match that the feed still marks live", () => {
+    const out = buildEvents([ev('Wales v Portugal - UEFA Nations League', 'soccer', 'live', now - 20 * 3600)], channels);
+    expect(out).toEqual([]);
+  });
+
+  it('drops a football match three hours after kick-off, keeps one at 90 minutes', () => {
+    expect(buildEvents([ev('Wales v Portugal', 'soccer', 'live', now - 3 * 3600)], channels)).toEqual([]);
+    const on = buildEvents([ev('Wales v Portugal', 'soccer', 'live', now - 90 * 60)], channels);
+    expect(liveNow(on, now).map((e) => e.title)).toEqual(['Wales v Portugal']);
+  });
+
+  it('keeps a long UFC card running, uses the feed end time when it has one', () => {
+    const card = buildEvents([ev('UFC 330: Smith v Jones', 'mma', 'live', now - 4 * 3600)], channels);
+    expect(liveNow(card, now)).toHaveLength(1);
+    const ended = buildEvents([ev('England v Spain', 'soccer', 'live', now - 3600, {end: now - 600})], channels);
+    expect(ended).toEqual([]);
+  });
+
+  it('treats a "live" slot hours away as upcoming, and a started "upcoming" one as live', () => {
+    const early = buildEvents([ev('Arsenal v Chelsea', 'soccer', 'live', now + 2 * 3600)], channels);
+    expect(early[0].live).toBe(false);
+    expect(liveNow(early, now)).toEqual([]);
+    const late = buildEvents([ev('Arsenal v Chelsea', 'soccer', 'upcoming', now - 20 * 60)], channels);
+    expect(liveNow(late, now).map((e) => e.title)).toEqual(['Arsenal v Chelsea']);
+  });
+
+  it('drops finished statuses and lets events expire as time passes', () => {
+    expect(buildEvents([ev('Arsenal v Chelsea', 'soccer', 'finished', now - 30 * 60)], channels)).toEqual([]);
+    const on = buildEvents([ev('Arsenal v Chelsea', 'soccer', 'live', now - 30 * 60)], channels);
+    expect(isOnNow(on[0], now)).toBe(true);
+    expect(isOnNow(on[0], now + 3 * 3600)).toBe(false);
+  });
+
+  it("checks the channel's own guide for right now", () => {
+    const event = {title: 'Wales v Portugal', competition: 'UEFA Nations League', sport: 'Football'};
+    const slot = (title: string) => ({title, start: now - 1800, end: now + 1800});
+    expect(guideAgrees(event, slot('Live: Wales v Portugal'), now)).toBe('match');
+    expect(guideAgrees(event, slot('Live International Football'), now)).toBe('unknown');
+    expect(guideAgrees(event, slot('Wales v Portugal Highlights'), now)).toBe('other');
+    expect(guideAgrees(event, slot('Bargain Hunt'), now)).toBe('other');
+    expect(guideAgrees(event, null, now)).toBe('unknown');
+  });
+});
+
+import {applyScores, looksLikeReplay, parseBoard, Scores} from '../src/tv/scores';
+
+describe('live now: 15 minutes before kick-off, and checked against live scores', () => {
+  const channels = mergeChannels(
+    collectSources([{provider: 'a', country: 'UK', entries: [{id: 'a:9', name: 'UK| TNT SPORTS 3 FHD', category: 'A: UK| SPORTS'}]}]),
+  );
+  const now = Math.floor(Date.now() / 1000);
+  const ev = (name: string, sport: string, status: string, start: number, end?: number) => ({
+    name,
+    sport,
+    status,
+    start,
+    end,
+    broadcasts: [{id: `x:${name}`, name: 'UK: TNT SPORTS 3 HD · Strong8K'}],
+  });
+  const board = (state: string, home: string, away: string, start: number) => ({
+    name: `${away} at ${home}`,
+    date: new Date(start * 1000).toISOString(),
+    status: {type: {state}},
+    competitions: [{competitors: [{team: {displayName: home}}, {team: {displayName: away}}]}],
+  });
+  const scoresOf = (...events: any[]): Scores => ({events: parseBoard('Football', {events}), covered: new Set(['Football'])});
+
+  it('shows a match from 15 minutes before kick-off, not an hour before', () => {
+    const inTen = buildEvents([ev('Manchester United v Arsenal', 'soccer', 'upcoming', now + 600)], channels);
+    expect(liveNow(inTen, now).map((e) => e.title)).toEqual(['Manchester United v Arsenal']);
+    expect(liveNow(inTen, now)[0].live).toBe(false);
+    const inHour = buildEvents([ev('Manchester United v Arsenal', 'soccer', 'upcoming', now + 3600)], channels);
+    expect(liveNow(inHour, now)).toEqual([]);
+  });
+
+  it("drops re-runs of last night's match that the listings call live", () => {
+    const listed = buildEvents([ev('Wales vs Portugal - UEFA Nations League 2026/2027 - MD6', 'soccer', 'live', now - 1800, now + 1800)], channels);
+    expect(listed).toHaveLength(1);
+    const scores = scoresOf(board('post', 'Wales', 'Portugal', now - 19 * 3600));
+    expect(applyScores(listed, scores, now)).toEqual([]);
+  });
+
+  it('keeps a match the scores say is in progress, and marks it confirmed', () => {
+    const listed = buildEvents([ev('Man Utd v Arsenal', 'soccer', 'live', now - 1800)], channels);
+    const out = applyScores(listed, scoresOf(board('in', 'Manchester United', 'Arsenal', now - 1800)), now);
+    expect(out.map((e) => [e.title, e.verified])).toEqual([['Man Utd v Arsenal', true]]);
+  });
+
+  it('waits for the real kick-off when the scores say it has not started', () => {
+    const listed = buildEvents([ev('Chelsea v Spurs', 'soccer', 'live', now)], channels);
+    const out = applyScores(listed, scoresOf(board('pre', 'Chelsea', 'Tottenham Hotspur', now + 3600)), now);
+    expect(out[0].live).toBe(false);
+    expect(liveNow(out, now)).toEqual([]);
+    expect(liveNow(out, now + 3600 - 600)).toHaveLength(1);
+  });
+
+  it('drops football the scores do not know today, keeps sports they do not cover', () => {
+    // (Separate builds: one channel carries one live event.)
+    const listed = [
+      ...buildEvents([ev('Juventus v Atalanta - Serie A', 'soccer', 'live', now - 1800)], channels),
+      ...buildEvents([ev('Joshua v Fury', 'boxing', 'live', now - 1800)], channels),
+    ];
+    expect(applyScores(listed, scoresOf(), now).map((e) => e.title)).toEqual(['Joshua v Fury']);
+    // Scores unreachable: the listing is all there is.
+    expect(applyScores(listed, null, now)).toHaveLength(2);
+  });
+
+  it('spots re-runs without scores: an old year, or a highlights-length slot', () => {
+    const base = {sport: 'Rugby', start: now - 600, end: now + 6000};
+    expect(looksLikeReplay({...base, title: 'La Rochelle v Leinster', competition: 'Champions Cup · 2021 Semi-Final'}, now)).toBe(true);
+    expect(looksLikeReplay({...base, title: 'Espanyol v Deportivo', competition: 'LALIGA 2026/2027 MD12'}, now)).toBe(false);
+    expect(looksLikeReplay({sport: 'Football', title: 'Wales v Portugal', competition: '', start: now - 600, end: now + 1200}, now)).toBe(true);
+  });
+});
+
+import {parseHeader} from '../src/tv/scores';
+
+describe('live now: matches with no play going on', () => {
+  const channels = mergeChannels(
+    collectSources([{provider: 'a', country: 'UK', entries: [{id: 'a:9', name: 'UK| TNT SPORTS 3 FHD', category: 'A: UK| SPORTS'}]}]),
+  );
+  const now = Math.floor(Date.now() / 1000);
+  const listed = buildEvents(
+    [{name: 'SA v BAN - 1st Test Day 4', sport: 'cricket', status: 'live', start: now - 7 * 3600, end: now + 1800, broadcasts: [{id: 'x:1', name: 'UK: TNT SPORTS 3 HD · Strong8K'}]}],
+    channels,
+  );
+  const header = (description: string) => ({
+    sports: [{leagues: [{events: [{name: 'South Africa v Bangladesh', date: new Date((now - 3 * 86400) * 1000).toISOString(), fullStatus: {type: {state: 'in', description}},
+      competitors: [{displayName: 'South Africa', name: 'SA', abbreviation: 'SA'}, {displayName: 'Bangladesh', name: 'BAN', abbreviation: 'BAN'}]}]}]}],
+  });
+
+  it('drops a Test at stumps (the channel shows other programmes), keeps it while play is on', () => {
+    expect(listed).toHaveLength(1);
+    const stumps: Scores = {events: parseHeader('Cricket', header('Stumps')), covered: new Set(['Cricket'])};
+    expect(applyScores(listed, stumps, now)).toEqual([]);
+    const playing: Scores = {events: parseHeader('Cricket', header('Live')), covered: new Set(['Cricket'])};
+    expect(applyScores(listed, playing, now).map((e) => e.verified)).toEqual([true]);
+  });
+});

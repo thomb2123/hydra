@@ -107,9 +107,47 @@ Untested on the device: Shaka playback of these streams, guide build time on the
 stick, and real picture quality per provider (the TS segments are on raw IPs this
 cloud workspace can't reach).
 
+## Verified on the stick, 18 Nov evening (supersedes the playback notes below)
+
+- **Films play in the platform's own player** (URL mode), straight from the debrid
+  server (the add-on redirect is followed once). This is the only path that plays 4K
+  smoothly here: the in-app MKV engine reads through JavaScript XHR and its remux gave
+  micro-stutter and audio stutter on 4K even on 5 GHz. The engine (restored to the
+  044cb5bfc version, plus: append never stops the read loop, read-ahead, direct debrid
+  URL, and B-frame decode times moved earlier by the reorder delay) is now only used when
+  the platform player refuses to jump inside an MKV (resume/skip) - see `verifySeek`.
+  The platform player cannot seek inside MKV over HTTP (tested: playing, paused, at open).
+- **Frame-rate matching:** before a film starts, `player/frameRate.ts` reads the frame
+  rate from the file header (MKV DefaultDuration or MP4 mdhd/stts) and calls
+  `W3CMediaTurboModule.setRefreshRate`; the file is opened 1.5 s later (opening during
+  the HDMI switch silences the player's events). `resetDisplayMode` on exit. Without
+  this, 23.976 fps films judder at 60 Hz ("slideshow", no spinner).
+- **Platform events can go missing:** a 1 s clock poll stands in for `timeupdate` and
+  `playing` (start detection, position, progress saving).
+- **Wi-Fi:** on 2.4 GHz the stick downloads ~30 Mbit/s and 4K stalls; on 5 GHz it measured
+  145 Mbit/s plain / 66 Mbit/s TLS. Measure with `scratchpad stick_speed2.sh` style curl
+  runs on the stick (`vda shell curl ...`).
+- **Stream choice:** Real-Debrid links first; IPTV-panel film links (`/movie/123.mkv`,
+  one connection, no seek) -300; no MP4 bonus (a fragmented MP4 stalled every ~30 s in the
+  platform player); "not cached" placeholders (`slate.elfhosted.com`) are detected after
+  the redirect and skipped; one start timeout no longer blacklists a host or add-on;
+  bad-host list keys bumped to v3 (old entries were wrong).
+- **Subtitles:** the community mirror `opensubtitles.stremio.homes` is blocked by BT/EE;
+  its links are tried on `subs5.strem.io` first, the automatic choice skips failed
+  servers, and the PC server is only used when it answers.
+- **Live TV:** live HLS plays in the platform player (Shaka timed out every channel).
+  Live Now: ESPN scoreboards (soccer, NBA, NFL, UFC, F1, tennis) + header feeds (cricket,
+  rugby) decide what is really in progress; Stumps/delays count as not live; sports with
+  no scores need the channel guide to say "Live"; events join 15 min before kick-off; no
+  background stream probes (they used IPTV connection slots and caused 509s); background
+  work pauses during playback and refreshes on return.
+- **Guide navigation:** `TVFocusGuideView` (left returns to the current category, right to
+  the last channel), category switch debounced, no focus grabbing after the first view.
+
 ## Open issues (in priority order)
 
-1. **About 5 minutes into a film, playback stalled** (spinner, frozen picture
+1. **About 5 minutes into a film, playback stalled** (engine only; films now play in the
+   platform player, see above) (spinner, frozen picture
    until the viewer skipped). Fixed in code on 18 Nov; **not yet confirmed on the stick.**
    - Cause found in `shared/src/mkv/session.ts`: any failed buffer write (quota
      full, an `error` instead of `updateend`, a timeout) ended the read loop for

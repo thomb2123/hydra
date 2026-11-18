@@ -144,17 +144,33 @@ export interface StreamGroup {
   error?: string;
 }
 
-/** Asks every stream add-on in parallel; groups keep the user's add-on order. */
-export async function fetchStreams(addons: AddonDescriptor[], type: string, videoId: string): Promise<StreamGroup[]> {
+/**
+ * Asks every stream add-on in parallel; groups keep the user's add-on order.
+ * `onGroup` hears each add-on as soon as it answers (with its position and the
+ * number of add-ons asked), so callers need not wait for the slowest one.
+ */
+export async function fetchStreams(
+  addons: AddonDescriptor[],
+  type: string,
+  videoId: string,
+  onGroup?: (group: StreamGroup, position: number, total: number) => void,
+): Promise<StreamGroup[]> {
   const candidates = addons.filter((addon) => supportsResource(addon.manifest, 'stream', type, videoId));
   return Promise.all(
-    candidates.map(async (addon) => {
+    candidates.map(async (addon, position) => {
+      let group: StreamGroup;
       try {
         const data = await requestJson<{streams?: Stream[]}>(resourceUrl(addon.transportUrl, 'stream', type, videoId), {timeoutMs: 30000});
-        return {addon, streams: Array.isArray(data.streams) ? data.streams : []};
+        group = {addon, streams: Array.isArray(data.streams) ? data.streams : []};
       } catch (e: any) {
-        return {addon, streams: [], error: String(e?.message || e)};
+        group = {addon, streams: [], error: String(e?.message || e)};
       }
+      try {
+        onGroup?.(group, position, candidates.length);
+      } catch {
+        // A listener problem must not lose the stream list.
+      }
+      return group;
     }),
   );
 }
@@ -185,15 +201,21 @@ export async function fetchSubtitles(
   if (!hasOfficial && (type === 'movie' || type === 'series') && /^tt\d+/.test(videoId)) {
     candidates.unshift({transportUrl: OFFICIAL_SUBTITLES_URL, name: 'OpenSubtitles'});
   }
+  const report: string[] = [];
   const lists = await Promise.all(
     candidates.map(async (addon) => {
       try {
         const data = await requestJson<{subtitles?: Subtitle[]}>(resourceUrl(addon.transportUrl, 'subtitles', type, videoId, extra), {timeoutMs: 20000});
-        return Array.isArray(data.subtitles) ? data.subtitles.map((s) => ({...s, source: addon.name})) : [];
-      } catch {
+        const list = Array.isArray(data.subtitles) ? data.subtitles.map((s) => ({...s, source: addon.name})) : [];
+        report.push(`${addon.name}=${list.length}`);
+        return list;
+      } catch (e: any) {
+        report.push(`${addon.name} failed (${e?.message || e})`);
         return [];
       }
     }),
   );
+  // eslint-disable-next-line no-console
+  console.log(`[stremio] subtitle add-ons for ${type} ${videoId}: ${report.join(', ') || 'none'}`);
   return lists.flat().filter((s) => s && s.url);
 }

@@ -44,7 +44,10 @@ function install(log: (line: string) => void) {
   } catch {
     // Older builds have no caption parser registry.
   }
-  shaka.log.setLevel(shaka.log.Level.WARNING);
+  // The compiled (release) Shaka build strips its debug logger, so `shaka.log` may be absent.
+  if (shaka.log && typeof shaka.log.setLevel === 'function' && shaka.log.Level) {
+    shaka.log.setLevel(shaka.log.Level.WARNING);
+  }
   installed = true;
   log(`shaka ${shaka.Player.version} ready`);
 }

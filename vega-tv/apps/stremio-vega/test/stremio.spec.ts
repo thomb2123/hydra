@@ -151,3 +151,20 @@ describe('subtitles', () => {
     expect(looksLikeSubtitles('1\n00:00:01,000 --> 00:00:02,000\nHi')).toBe(true);
   });
 });
+
+import {rankStreams as rankForSpeed} from '../src/stremio/streamPicker';
+
+describe('stream choice fits the measured connection', () => {
+  const s = (title: string) => ({url: `https://x/${encodeURIComponent(title)}`, title});
+  const streams = [s('Film 2160p WEB-DL HDR10 DDP Atmos x265 💾 12.8 GB .mkv'), s('Film 1080p WEB-DL DDP5.1 x264 💾 4.2 GB .mkv')];
+
+  it('keeps 4K first when the speed is unknown or ample', () => {
+    expect(rankForSpeed([{addonName: 'a', streams}], {hasServer: false, runtimeMin: 125})[0].traits.resolution).toBe(2160);
+    expect(rankForSpeed([{addonName: 'a', streams}], {hasServer: false, runtimeMin: 125, mkvMbps: 60})[0].traits.resolution).toBe(2160);
+  });
+
+  it('prefers a version the connection can carry when it is slow', () => {
+    // 12.8 GB over 125 min is about 14.7 Mbit/s; at 12 Mbit/s measured only ~9.6 fits.
+    expect(rankForSpeed([{addonName: 'a', streams}], {hasServer: false, runtimeMin: 125, maxMbps: 9.6})[0].traits.resolution).toBe(1080);
+  });
+});

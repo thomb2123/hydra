@@ -18,6 +18,7 @@ import {RemoteKey, useBackHandler, useRemoteKeys} from '../tv/remote';
 import {AdaptiveSession, adaptivePlayer, deliveryKind} from './adaptive';
 import {Cue, cueTextAt, looksLikeSubtitles, parseSubtitles, rescaleCues} from '../subtitles';
 import {hostOf, request} from '../net';
+import {detectFrameRate, matchDisplayTo, resetDisplay, standardRate} from './frameRate';
 
 export interface ExternalSubtitle {
   id: string;
@@ -49,6 +50,50 @@ export interface PlaySource {
   startTimeoutMs?: number;
   /** Video frame rate, when known (from a server probe). */
   videoFps?: number;
+  /** Play through the in-app Matroska engine (set when a skip in the platform player failed). */
+  engine?: boolean;
+  /** Skip the engine: straight into the platform player (no skipping inside MKV there). */
+  directOnly?: boolean;
+}
+
+/**
+ * Follows an add-on link's redirect to the real download address (one tiny ranged
+ * request), so the player talks to the file server directly. Falls back to the link itself.
+ */
+function resolveRedirect(url: string, timeoutMs = 10000): Promise<string> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    let done = false;
+    const finish = (value: string) => {
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        try {
+          xhr.abort();
+        } catch {
+          // already finished
+        }
+        resolve(value);
+      }
+    };
+    const timer = setTimeout(() => finish(url), timeoutMs);
+    // The platform reports the final address only once the (one-byte) response has loaded.
+    xhr.onload = () => {
+      const final = String((xhr as any).responseURL || '');
+      finish(/^https?:\/\//i.test(final) && xhr.status < 400 ? final : url);
+    };
+    xhr.onerror = () => finish(url);
+    try {
+      // Same shape as the engine's reads (binary, a real range): the platform completes
+      // these promptly and reports where the redirect led.
+      xhr.open('GET', url);
+      xhr.responseType = 'arraybuffer';
+      xhr.setRequestHeader('Range', 'bytes=0-65535');
+      xhr.send();
+    } catch {
+      finish(url);
+    }
+  });
 }
 
 export interface VideoScreenProps {
@@ -85,6 +130,10 @@ export interface VideoScreenProps {
    * `position`. Without this prop the player switches route internally.
    */
   onRouteSwitched?: (fromUrl: string, position: number) => void;
+  /** The platform player could not jump in this file: reopen it in the in-app engine at `position`. */
+  onUseEngine?: (position: number) => void;
+  /** The film keeps rebuffering at `position`: the connection cannot carry this version. */
+  onTooSlow?: (position: number) => void;
 }
 
 const ACCENT = '#7b5cff';
@@ -286,7 +335,7 @@ const PanelRow = ({label, selected, onPress, preferred}: {label: string; selecte
 
 // ---------------------------------------------------------------------------
 
-export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, onFailed, onStarted, onMenu, inputLocked, chromeless, onInfo, onNext, nextLabel, preferredSubtitle, onSubtitleChosen, onRouteSwitched}: VideoScreenProps) => {
+export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, onFailed, onStarted, onMenu, inputLocked, chromeless, onInfo, onNext, nextLabel, preferredSubtitle, onSubtitleChosen, onRouteSwitched, onUseEngine, onTooSlow}: VideoScreenProps) => {
   const autoSubDone = useRef(false);
   const mkvRef = useRef<MkvSession | null>(null);
   const [embedded, setEmbeddedState] = useState<EmbeddedSubtitleTrack[]>([]);
@@ -318,6 +367,13 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
   const [activeUrl, setActiveUrl] = useState(source.url);
   const onRouteSwitchedRef = useRef(onRouteSwitched);
   onRouteSwitchedRef.current = onRouteSwitched;
+  const onUseEngineRef = useRef(onUseEngine);
+  onUseEngineRef.current = onUseEngine;
+  const onTooSlowRef = useRef(onTooSlow);
+  onTooSlowRef.current = onTooSlow;
+  const rebuffers = useRef<number[]>([]);
+  const tooSlowSent = useRef(false);
+  const startedAt = useRef(0);
   const seekTarget = useRef<number | null>(null);
   const pendingStart = useRef<number | null>(null);
   const seekCheck = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -338,6 +394,10 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
   const externalCues = useRef<Record<string, Cue[]>>({});
   const activeCues = useRef<Cue[] | null>(null);
   const subRequest = useRef(0);
+  /** Subtitle servers that failed this session (skipped by the automatic choice). */
+  const failedSubHosts = useRef(new Set<string>());
+  /** The display refresh rate was switched for this film (reset on exit). */
+  const displayMatched = useRef(false);
   const subShift = useRef(0); // seconds; positive shows subtitles earlier
 
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -453,6 +513,12 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
         pendingStart.current = target;
         setActiveUrl(source.altUrl);
       }
+    } else if (!source.engine && !source.live && onUseEngineRef.current) {
+      // The platform player cannot jump inside this file (Matroska over the network):
+      // reopen it in the in-app engine at the target (a fresh player and surface).
+      log(`reopening in the engine at ${target.toFixed(1)}`);
+      setBuffering(true);
+      onUseEngineRef.current(target);
     } else if (seekRetries.current < 1) {
       // One more try once the pipeline has settled.
       seekRetries.current++;
@@ -477,7 +543,7 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       setTimeout(() => setNotice(null), 4000);
       setPosition(now);
     }
-  }, [log, source.altUrl, startUrl]);
+  }, [log, source.altUrl, source.engine, source.live, startUrl]);
 
   const seekTo = useCallback(
     (target: number) => {
@@ -501,15 +567,29 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       seekAt.current = Date.now();
       setPosition(t);
       setBuffering(true);
+      // The platform pipeline takes a jump most reliably while paused: pause, jump, resume.
+      try {
+        player.pause?.();
+      } catch {
+        // not paused: the jump is still tried
+      }
       try {
         player.currentTime = t;
       } catch (e: any) {
         log(`seek threw: ${e?.message || e}`);
       }
+      setTimeout(() => {
+        try {
+          const p: any = player.play?.();
+          p?.catch?.(() => undefined);
+        } catch {
+          // play() refused: the watchdog takes over
+        }
+      }, 400);
       if (seekCheck.current) {
         clearTimeout(seekCheck.current);
       }
-      seekCheck.current = setTimeout(verifySeek, 4500);
+      seekCheck.current = setTimeout(verifySeek, 9000);
     },
     [log, source.live, verifySeek],
   );
@@ -557,7 +637,14 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
     const kind = deliveryKind(activeUrl, source.mime);
     log(`load ${kind}: ${activeUrl}`);
     if (kind !== 'progressive') {
-      const factory = adaptivePlayer();
+      // Live HLS (MPEG-TS segments) plays in the platform's own player: on the stick
+      // Shaka timed out starting every live channel (18 Nov), URL mode started them all.
+      const factory = kind === 'hls' && source.live ? null : adaptivePlayer();
+      if (!factory && kind === 'hls' && source.live) {
+        log('live HLS: platform player');
+        startUrl(activeUrl);
+        return;
+      }
       if (factory) {
         try {
           adaptiveRef.current = factory(player, activeUrl, {live: !!source.live, autoplay: true, startAt: source.startAt});
@@ -570,8 +657,57 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       startUrl(activeUrl);
       return;
     }
-    // Progressive files: try the in-app Matroska engine (seeking, resume, audio choice);
-    // anything it cannot take (MP4, unsupported codecs) plays in URL mode.
+    // Films play in the platform's own player straight from the debrid server: smooth
+    // picture and sound at full speed (the in-app engine repackages in JavaScript and
+    // stutters on this stick). The TV's refresh rate is matched to the film first. Only a
+    // resume or skip the platform player refuses (inside MKV) reopens the film in the
+    // engine at that point (see verifySeek).
+    const fpsFound: Promise<number | undefined> = source.live
+      ? Promise.resolve(undefined)
+      : source.videoFps
+        ? Promise.resolve(source.videoFps)
+        : detectFrameRate(activeUrl, 3000);
+    const matchFrameRate = (fps: number | undefined) => {
+      if (playerRef.current !== player || displayMatched.current) {
+        return;
+      }
+      if (fps) {
+        displayMatched.current = matchDisplayTo(standardRate(fps), log);
+      } else {
+        log('frame rate unknown: display left as it is');
+      }
+    };
+    if (!source.engine) {
+      // The display switches (a moment of black) before the picture starts, not mid-film.
+      Promise.all([resolveRedirect(activeUrl), fpsFound]).then(([direct, fps]) => {
+        if (playerRef.current !== player) {
+          return;
+        }
+        // Debrid add-ons redirect to a "not ready yet" clip when the file is not cached.
+        if (/\/\/slate\.|\/slate[./]|not[_-]?ready/i.test(direct) && onFailedRef.current && !failedRef.current) {
+          failedRef.current = true;
+          log(`start failed: placeholder clip (${hostOf(direct)}), not the film`);
+          onFailedRef.current('placeholder clip (not cached)');
+          return;
+        }
+        matchFrameRate(fps);
+        const go = () => {
+          if (playerRef.current === player) {
+            log(`progressive: playing directly${direct !== activeUrl ? ` from ${hostOf(direct)}` : ''}`);
+            startUrl(direct);
+          }
+        };
+        // Let the TV settle on the new refresh rate before the player opens the file
+        // (opening during the switch can silence the player's events).
+        if (displayMatched.current) {
+          setTimeout(go, 1500);
+        } else {
+          go();
+        }
+      });
+      return;
+    }
+    fpsFound.then(matchFrameRate);
     const start = pendingStart.current;
     openMkv(
       player,
@@ -684,7 +820,9 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       const d = Number(player.duration);
       setDuration(Number.isFinite(d) ? d : 0);
     });
-    on('playing', () => {
+    // Playback has really started: from the 'playing' event, or (the platform does not always
+    // send it) from the clock moving forward.
+    const onPlaying = () => {
       clearStall();
       if (!startedRef.current) {
         let width = 0;
@@ -696,6 +834,7 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
           // Not reported on every build.
         }
         log(`started ${width}x${height}`);
+        startedAt.current = Date.now();
         onStartedRef.current?.({width, height});
       }
       startedRef.current = true;
@@ -741,7 +880,8 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
           }
         }, 2500);
       }
-    });
+    };
+    on('playing', onPlaying);
     on('pause', () => {
       setPaused(true);
       setHud(true);
@@ -749,6 +889,18 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
     });
     on('waiting', () => {
       setBuffering(true);
+      // A film that keeps rebuffering is heavier than this connection carries: hand over
+      // (the caller picks a version that fits and continues from the same place).
+      if (!source.live && startedRef.current && !tooSlowSent.current && Date.now() - seekAt.current > 6000 && Date.now() - startedAt.current > 8000) {
+        const now = Date.now();
+        rebuffers.current = rebuffers.current.filter((at) => now - at < 60000).concat(now);
+        if (rebuffers.current.length >= 2 && onTooSlowRef.current) {
+          tooSlowSent.current = true;
+          const at = Number(player.currentTime) || 0;
+          log(`rebuffered ${rebuffers.current.length} times in a minute at ${at.toFixed(1)}: switching to a version that fits the connection`);
+          onTooSlowRef.current(at);
+        }
+      }
       if (source.live && startedRef.current && !stallTimer) {
         stallTimer = setTimeout(() => failLive('stalled for 15 s'), 15000);
       }
@@ -759,15 +911,24 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       if (seekCheck.current) {
         clearTimeout(seekCheck.current);
       }
-      seekCheck.current = setTimeout(verifySeek, 2000);
+      // A jump inside a remote 4K file can take several seconds to really land.
+      seekCheck.current = setTimeout(verifySeek, mkvRef.current ? 2000 : 8000);
     });
-    on('timeupdate', () => {
+    let lastTimeEvent = 0;
+    const onTime = (fromEvent: boolean) => {
+      if (fromEvent) {
+        lastTimeEvent = Date.now();
+      }
       const t = Number(player.currentTime) || 0;
+      const moved = Math.abs(t - lastTickPos.current) > 0.05;
       // A tick counts as progress only when the clock actually moved.
       if (Math.abs(t - lastTickPos.current) > 0.05) {
         lastTickAt.current = Date.now();
         lastTickPos.current = t;
         clearStall();
+      }
+      if (!startedRef.current && t > 0.3 && lastTickAt.current > 0 && !player.paused) {
+        onPlaying();
       }
       if (scrubRef.current == null) {
         setPosition(Number(player.currentTime) || 0);
@@ -776,9 +937,26 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       if (Number.isFinite(d) && d > 0) {
         setDuration(d);
       }
+      if (!moved && !fromEvent) {
+        return; // polled and the clock has not moved: nothing new
+      }
       setBuffering(false);
       reportProgress(false);
-    });
+    };
+    on('timeupdate', () => onTime(true));
+    // The platform does not always send events (e.g. after a display mode change): if they
+    // go quiet, read the clock directly so start, position and progress still work.
+    const clockPoll = setInterval(() => {
+      if (!disposed && Date.now() - lastTimeEvent > 1500) {
+        try {
+          if (!player.paused) {
+            onTime(false);
+          }
+        } catch {
+          // player gone
+        }
+      }
+    }, 1000);
     on('ended', () => {
       reportProgress(true);
       if (onNext) {
@@ -822,6 +1000,7 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
 
     return () => {
       disposed = true;
+      clearInterval(clockPoll);
       mkvRef.current?.unload();
       mkvRef.current = null;
       if (watchdog) {
@@ -852,6 +1031,10 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
         .catch(() => undefined);
       initialisedRef.current = false;
       playerRef.current = null;
+      if (displayMatched.current) {
+        displayMatched.current = false;
+        resetDisplay(log);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeUrl]);
@@ -968,7 +1151,7 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
     setSubText('');
   };
 
-  const chooseSubtitle = async (sub: ExternalSubtitle | null, byViewer = true) => {
+  const chooseSubtitle = async (sub: ExternalSubtitle | null, byViewer = true): Promise<void> => {
     const player: any = playerRef.current;
     for (const track of listOf<any>(player?.textTracks)) {
       track.mode = 'disabled';
@@ -996,6 +1179,19 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       } catch (e: any) {
         if (token === subRequest.current) {
           log(`subtitles failed: ${e?.message || e}`);
+          if (!byViewer && playerRef.current === player) {
+            // Automatic choice: the next subtitle in the same language from a server that has
+            // not just failed (a blocked mirror fails for every file it holds).
+            failedSubHosts.current.add(hostOf(sub.fallbackUrl || sub.url));
+            const list = source.subtitles || [];
+            const next = list
+              .slice(list.findIndex((s) => s.id === sub.id) + 1)
+              .find((s) => s.language === sub.language && !failedSubHosts.current.has(hostOf(s.fallbackUrl || s.url)));
+            if (next) {
+              log(`auto subtitles: trying ${next.label}`);
+              return chooseSubtitle(next, false);
+            }
+          }
           setSelectedSub('off');
           setNotice("Those subtitles couldn't be loaded. Try another.");
           setTimeout(() => setNotice(null), 4000);

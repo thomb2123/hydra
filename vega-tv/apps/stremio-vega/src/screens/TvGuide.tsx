@@ -1,16 +1,17 @@
-// TV guide: categories down the left (Live Sport first), channels on the right
+// TV guide: categories down the left (Live Now first), channels on the right
 // with number, logo, what's on now (time + progress) and what's next. One entry
 // per real channel; the best working source is chosen behind the scenes, and a
 // channel you rest on is checked in the background so OK starts it at once.
 // The guide reopens on the last channel watched, like a TV box.
 import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {FlatList, Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {TVFocusGuideView} from '@amazon-devices/react-native-kepler';
 import {Pill} from '../ui/Cards';
 import {brand, edge, type} from '../ui/brand';
 import {CATEGORIES} from '../tv/lineup';
 import {MergedChannel} from '../tv/channels';
 import {NowNext, cachedNowNext, cleanTitle, nowNext, progressOf, timeRange} from '../tv/epg';
-import {SportEvent} from '../tv/events';
+import {LIVE_NOW_ID, SportEvent} from '../tv/events';
 import {prefetchChannel} from '../tv/tune';
 import {TvState} from '../tv/useTv';
 import * as fx from '../tv/flixnest';
@@ -23,19 +24,88 @@ export interface TvGuideProps {
   playEvent: (event: SportEvent) => void;
 }
 
-const SPORT_ID = 'live-sport';
+const SPORT_ID = LIVE_NOW_ID;
 
 export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
   const channels = tv.guide?.channels || [];
   const categories = useMemo(() => {
     const present = CATEGORIES.filter((c) => channels.some((ch) => ch.category === c.id));
-    return tv.events.length ? [{id: SPORT_ID, title: 'Live Sport'}, ...present] : present;
+    return tv.events.length ? [{id: SPORT_ID, title: 'Live Now'}, ...present] : present;
   }, [channels, tv.events.length]);
   // Reopen where the viewer left off (last channel watched), else the first category.
   const [categoryId, setCategoryId] = useState<string>(() => tv.last?.category || '');
   const active = categories.some((c) => c.id === categoryId) ? categoryId : categories[0]?.id || '';
   const list = useMemo(() => channels.filter((c) => c.category === active), [channels, active]);
-  const resumeIndex = useMemo(() => (tv.last && tv.last.category === active ? list.findIndex((c) => c.id === tv.last!.channelId) : -1), [list, active, tv.last]);
+  // Only the first view of the guide puts focus on the last channel watched. After the
+  // viewer starts moving, nothing grabs focus (a list appearing must not pull focus in).
+  const settled = useRef(false);
+  const markSettled = useCallback(() => {
+    settled.current = true;
+  }, []);
+  const resumeIndex = useMemo(
+    () => (!settled.current && tv.last && tv.last.category === active ? list.findIndex((c) => c.id === tv.last!.channelId) : -1),
+    [list, active, tv.last],
+  );
+  // Back from a Live Now event: focus that event (if it is still on).
+  const resumeEvent = useMemo(
+    () => (!settled.current && tv.last && tv.last.category === SPORT_ID && active === SPORT_ID ? tv.events.findIndex((e) => e.key === tv.last!.channelId) : -1),
+    [tv.events, active, tv.last],
+  );
+  // Moving down the categories switches the list only once focus rests (no rebuild per step).
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chooseCategory = useCallback(
+    (id: string) => {
+      markSettled();
+      if (pending.current) {
+        clearTimeout(pending.current);
+      }
+      pending.current = setTimeout(() => {
+        pending.current = null;
+        setCategoryId(id);
+      }, 160);
+    },
+    [markSettled],
+  );
+  useEffect(
+    () => () => {
+      if (pending.current) {
+        clearTimeout(pending.current);
+      }
+    },
+    [],
+  );
+  // Category buttons by id, so the column can send focus straight to the current one.
+  const catRefs = useRef(new Map<string, any>());
+  const [, setCatsMounted] = useState(false);
+  const registerCat = useCallback((id: string, ref: any) => {
+    if (ref) {
+      const first = !catRefs.current.size;
+      catRefs.current.set(id, ref);
+      if (first) {
+        setCatsMounted(true); // re-render once so the column knows its destination
+      }
+    } else {
+      catRefs.current.delete(id);
+    }
+  }, []);
+  const access = tv.access;
+  const renderChannel = useCallback(
+    ({item, index}: {item: MergedChannel; index: number}) => (
+      <ChannelRow
+        access={access!}
+        channel={item}
+        preferred={index === resumeIndex}
+        liveTitle={liveOnRef.current.get(item.id)}
+        onFocused={markSettled}
+        onPress={() => playChannel(item, list)}
+      />
+    ),
+    [access, resumeIndex, markSettled, playChannel, list],
+  );
+  const renderEvent = useCallback(
+    ({item, index}: {item: SportEvent; index: number}) => <EventRow event={item} preferred={index === resumeEvent} onFocused={markSettled} onPress={() => playEvent(item)} />,
+    [markSettled, playEvent, resumeEvent],
+  );
   // Sport channels without guide data show the match they are carrying.
   const liveOn = useMemo(() => {
     const map = new Map<string, string>();
@@ -46,6 +116,8 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
     }
     return map;
   }, [tv.events]);
+  const liveOnRef = useRef(liveOn);
+  liveOnRef.current = liveOn;
   const activeTitle = categories.find((c) => c.id === active)?.title || '';
 
   if (!tv.ready) {
@@ -91,12 +163,22 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
     <View style={styles.root}>
       {nav}
       <View style={styles.body}>
-        <View style={styles.side}>
+        {/* Left from the channels returns to the category you are in, not the nearest one. */}
+        <TVFocusGuideView destinations={[catRefs.current.get(active) || null]} style={styles.side}>
           {categories.map((c, i) => (
-            <CategoryButton key={c.id} title={c.title} active={c.id === active} preferred={resumeIndex < 0 && i === 0} onFocus={() => setCategoryId(c.id)} />
+            <CategoryButton
+              key={c.id}
+              id={c.id}
+              title={c.title}
+              active={c.id === active}
+              preferred={!settled.current && resumeIndex < 0 && resumeEvent < 0 && i === 0}
+              onChoose={chooseCategory}
+              register={registerCat}
+            />
           ))}
-        </View>
-        <View style={styles.main}>
+        </TVFocusGuideView>
+        {/* Right from the categories lands on the channel you were last on in this list. */}
+        <TVFocusGuideView autoFocus style={styles.main}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>{activeTitle}</Text>
             <Clock />
@@ -107,44 +189,37 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
               data={tv.events}
               keyExtractor={(e) => e.key}
               initialNumToRender={8}
-              windowSize={3}
-              renderItem={({item}) => <EventRow event={item} onPress={() => playEvent(item)} />}
+              windowSize={7}
+              renderItem={renderEvent}
             />
           ) : (
             <FlatList
               key={active}
               data={list}
               keyExtractor={(c) => c.id}
-              initialNumToRender={Math.max(7, resumeIndex + 3)}
-              maxToRenderPerBatch={4}
-              windowSize={3}
-              removeClippedSubviews
-              renderItem={({item, index}) => (
-                <ChannelRow
-                  access={tv.access!}
-                  channel={item}
-                  preferred={index === resumeIndex}
-                  liveTitle={liveOn.get(item.id)}
-                  onPress={() => playChannel(item, list)}
-                />
-              )}
+              initialNumToRender={Math.max(8, resumeIndex + 3)}
+              maxToRenderPerBatch={8}
+              windowSize={9}
+              renderItem={renderChannel}
             />
           )}
-        </View>
+        </TVFocusGuideView>
       </View>
     </View>
   );
 };
 
-const CategoryButton = ({title, active, preferred, onFocus}: {title: string; active: boolean; preferred: boolean; onFocus: () => void}) => {
+const CategoryButton = memo(
+  ({id, title, active, preferred, onChoose, register}: {id: string; title: string; active: boolean; preferred: boolean; onChoose: (id: string) => void; register: (id: string, ref: any) => void}) => {
   const [focused, setFocused] = useState(false);
   return (
     <TouchableOpacity
+      ref={(r) => register(id, r)}
       activeOpacity={1}
       hasTVPreferredFocus={preferred}
       onFocus={() => {
         setFocused(true);
-        onFocus();
+        onChoose(id);
       }}
       onBlur={() => setFocused(false)}
       style={[styles.cat, active && styles.catActive, focused && styles.catFocused]}>
@@ -153,7 +228,8 @@ const CategoryButton = ({title, active, preferred, onFocus}: {title: string; act
       </Text>
     </TouchableOpacity>
   );
-};
+  },
+);
 
 const Clock = () => {
   const [now, setNow] = useState(() => new Date());
@@ -175,7 +251,7 @@ const Clock = () => {
 
 type Avail = 'unknown' | 'checking' | 'on' | 'off';
 
-export const ChannelRow = memo(({access, channel, preferred, liveTitle, onPress}: {access: fx.Access; channel: MergedChannel; preferred?: boolean; liveTitle?: string; onPress: () => void}) => {
+export const ChannelRow = memo(({access, channel, preferred, liveTitle, onFocused, onPress}: {access: fx.Access; channel: MergedChannel; preferred?: boolean; liveTitle?: string; onFocused?: () => void; onPress: () => void}) => {
   const [focused, setFocused] = useState(false);
   const [avail, setAvail] = useState<Avail>('unknown');
   const [info, setInfo] = useState<NowNext | null>(() => cachedNowNext(channel));
@@ -215,7 +291,10 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, onPress}
       activeOpacity={1}
       hasTVPreferredFocus={preferred}
       onPress={onPress}
-      onFocus={() => setFocused(true)}
+      onFocus={() => {
+        setFocused(true);
+        onFocused?.();
+      }}
       onBlur={() => setFocused(false)}
       accessibilityLabel={`${channel.name}${now?.title ? `, now ${cleanTitle(now.title)}` : ''}`}
       style={[styles.row, focused && styles.rowFocused]}>
@@ -238,11 +317,7 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, onPress}
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, {width: `${Math.round(progress * 100)}%`}]} />
         </View>
-        {focused && now?.description ? (
-          <Text numberOfLines={2} style={styles.desc}>
-            {now.description}
-          </Text>
-        ) : null}
+        {/* (No extra description line on focus: rows keep one height, so the list never shifts.) */}
         <Text numberOfLines={1} style={styles.nextTitle}>
           {next?.title ? `Next  ${timeRange(next).split('–')[0]}  ${cleanTitle(next.title)}` : ''}
         </Text>
@@ -251,14 +326,18 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, onPress}
   );
 });
 
-const EventRow = ({event, onPress}: {event: SportEvent; onPress: () => void}) => {
+const EventRow = ({event, preferred, onFocused, onPress}: {event: SportEvent; preferred?: boolean; onFocused?: () => void; onPress: () => void}) => {
   const [focused, setFocused] = useState(false);
   const when = event.live ? 'LIVE' : timeRange({start: event.start});
   return (
     <TouchableOpacity
       activeOpacity={1}
+      hasTVPreferredFocus={preferred}
       onPress={onPress}
-      onFocus={() => setFocused(true)}
+      onFocus={() => {
+        setFocused(true);
+        onFocused?.();
+      }}
       onBlur={() => setFocused(false)}
       style={[styles.row, styles.eventRow, focused && styles.rowFocused]}>
       <Text style={[styles.when, event.live && styles.live]}>{when}</Text>
@@ -267,7 +346,7 @@ const EventRow = ({event, onPress}: {event: SportEvent; onPress: () => void}) =>
           {event.title}
         </Text>
         <Text numberOfLines={1} style={styles.eventMeta}>
-          {[event.competition || event.sport, event.channelName].filter(Boolean).join('  ·  ')}
+          {[event.competition || event.sport, event.channelName, event.live && event.start ? `started ${timeRange({start: event.start})}` : ''].filter(Boolean).join('  ·  ')}
         </Text>
       </View>
     </TouchableOpacity>

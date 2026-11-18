@@ -29,6 +29,10 @@ export interface StreamTraits {
   bluRay: boolean;
   cam: boolean;
   sizeGb: number; // 0 when unknown
+  /** An MP4 file (plays in the platform's own player). */
+  mp4: boolean;
+  /** An IPTV-panel film link (one connection per account, no skipping). */
+  iptvVod: boolean;
   seeders: number; // -1 when unknown
   cached: boolean; // instantly available (debrid cache or plain HTTP)
   uncached: boolean; // debrid stream that would have to download first
@@ -127,6 +131,8 @@ export function analyseStream(stream: Stream): StreamTraits {
     bluRay: /\b(blu[ ._-]?ray|bdrip|brrip)\b/i.test(text),
     cam: /\b(cam|camrip|hdcam|telesync|hdts|hd-ts|telecine|hdtc)\b|\bts\b(?!\w)/i.test(text) && !/\b(m2ts|mpeg-ts)\b/i.test(text),
     sizeGb,
+    mp4: /\.mp4\b/i.test(`${stream.behaviorHints?.filename || ''}\n${text}`),
+    iptvVod: /\/(?:vod\/)?(?:movie|series)\/(?:[^/?]+\/){0,2}\d+\.(?:mkv|mp4|avi|ts)(?:\?|$)/i.test(url),
     seeders: seedMatch ? Number(seedMatch[1]) : -1,
     cached,
     uncached,
@@ -168,6 +174,22 @@ export function summarise(traits: StreamTraits): string {
 export interface PickerOptions {
   /** True when the Stremio streaming server on the PC is configured. */
   hasServer: boolean;
+  /** Running time of the film or episode (minutes), to turn file size into bitrate. */
+  runtimeMin?: number;
+  /** Measured download speed of the in-app MKV engine on this device (Mbit/s). */
+  mkvMbps?: number;
+  /** Highest average bitrate (Mbit/s) that plays here without stalling. */
+  maxMbps?: number;
+}
+
+/** Average bitrate (Mbit/s) of a file of this size over this running time, 0 when unknown. */
+export function averageMbps(sizeGb: number, runtimeMin?: number): number {
+  return sizeGb > 0 && runtimeMin && runtimeMin > 0 ? (sizeGb * 8589.93) / (runtimeMin * 60) : 0;
+}
+
+/** What the connection carries without stalling (learned from playback), 0 = no limit. */
+export function budgetMbps(options: PickerOptions, _mp4: boolean): number {
+  return options.maxMbps || 0;
 }
 
 /** Higher is better. Streams that cannot play on this device get a large negative score. */
@@ -226,6 +248,21 @@ export function scoreStream(traits: StreamTraits, options: PickerOptions): numbe
     score -= 90;
   } else if (traits.sizeGb > 25) {
     score -= 35;
+  }
+  // Smooth beats sharp: a version the connection cannot carry buffers, so it drops below
+  // ones that fit (4K returns by itself when the measured speed allows it).
+  const bitrate = averageMbps(traits.sizeGb, options.runtimeMin);
+  const budget = budgetMbps(options, traits.mp4);
+  if (bitrate && budget && bitrate > budget) {
+    score -= 250 + Math.min(400, (bitrate / budget - 1) * 300);
+  }
+  if (traits.mp4) {
+    score += 0; // no MP4 preference: some MP4s are fragmented and stall in the platform player
+  }
+  if (traits.iptvVod) {
+    // IPTV-panel film links (".../movie/123.mkv"): one connection per account, no skipping,
+    // refused while live TV is in use. Debrid links win whenever there are any.
+    score -= 300;
   }
 
   // Start-up speed and reliability.

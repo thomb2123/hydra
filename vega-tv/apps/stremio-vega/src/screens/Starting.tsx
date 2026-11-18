@@ -65,8 +65,10 @@ export const Starting = ({state, meta, video, startIndex = 0, onReady, onManual,
           return;
         }
         log(`ready in ${Date.now() - began} ms: #${pick.index} ${chosen.summary}`);
-        // Only torrents get a start-up timeout (peers can be slow); HTTP streams fall back on real errors only.
-        onReady({...source, startTimeoutMs: chosen.traits.torrent ? 120000 : undefined}, pick.ranked, pick.index);
+        // A version that has not started in 15 s (torrents: 2 min, peers can be slow) gives way
+        // to the next one, so a stuck server never leaves the viewer on a spinner.
+        const resuming = !!source.startAt && source.startAt > 5; // resumes open through the slower engine
+        onReady({...source, startTimeoutMs: chosen.traits.torrent ? 120000 : resuming ? 30000 : 15000}, pick.ranked, pick.index);
       } catch (e: any) {
         if (!cancelled.current) {
           setFailed(String(e?.message || e));

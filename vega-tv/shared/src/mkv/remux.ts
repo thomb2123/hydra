@@ -17,6 +17,8 @@ export class MkvRemuxer {
   private readonly audioTrack: Track | null;
   private sequence = 1;
   private lastVideoDts = -Infinity;
+  /** How far decode runs ahead of display (B-frame reordering), in timescale ticks. */
+  private reorderDelay = 0;
 
   constructor(videoTrack: Track | null, audioTrack: Track | null) {
     const vc = videoTrack ? videoConfig(videoTrack) : null;
@@ -71,13 +73,20 @@ export class MkvRemuxer {
     const ts = v.config.timescale;
     const frameTicks = Math.round(v.config.frameDuration * ts);
     const pts = frames.map((f) => Math.round(f.pts * ts));
-    // Frames are stored in decode order with presentation times; decode times are the
-    // sorted presentation times (kept strictly increasing across fragments).
+    // Frames are stored in decode order with presentation times. Decode times are the
+    // sorted presentation times moved earlier by the reorder delay, so no frame is due for
+    // decoding after it should be on screen (B-frames otherwise arrive late and are shown
+    // unevenly - a "slideshow" with no buffering). Kept strictly increasing across fragments.
     const sorted = [...pts].sort((a, b) => a - b);
+    let delay = 0;
+    for (let i = 0; i < sorted.length; i++) {
+      delay = Math.max(delay, sorted[i] - pts[i]);
+    }
+    this.reorderDelay = Math.max(this.reorderDelay, delay);
     const dts: number[] = [];
     for (let i = 0; i < sorted.length; i++) {
       const prev = i === 0 ? this.lastVideoDts : dts[i - 1];
-      dts.push(Math.max(sorted[i], prev + 1));
+      dts.push(Math.max(sorted[i] - this.reorderDelay, prev + 1, 0));
     }
     this.lastVideoDts = dts[dts.length - 1];
     const samples: Sample[] = frames.map((f, i) => ({

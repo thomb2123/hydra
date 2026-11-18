@@ -19,13 +19,13 @@ import {Streams} from './screens/Streams';
 import {brand} from './ui/brand';
 import {RankedStream} from './stremio/streamPicker';
 import {nextEpisode} from './stremio/playback';
-import {forgetPick} from './stremio/autoPick';
+import {forgetPick, noteFailure} from './stremio/autoPick';
 import {markNoSeekHost} from './stremio/badHosts';
 import {MetaDetail, MetaPreview, Video} from './stremio/types';
-import {useTv} from './tv/useTv';
+import {setTvBackgroundPaused, useTv} from './tv/useTv';
 import {TvPlayer} from './screens/TvPlayer';
 import {MergedChannel, Source} from './tv/channels';
-import {SportEvent} from './tv/events';
+import {LIVE_NOW_ID, SportEvent} from './tv/events';
 
 type Route =
   | {name: 'browse'}
@@ -33,11 +33,13 @@ type Route =
   | {name: 'starting'; meta: MetaDetail; video: Video | null; ranked?: RankedStream[]; startIndex?: number; notice?: string}
   | {name: 'streams'; meta: MetaDetail; video: Video | null}
   | {name: 'player'; source: PlaySource; meta: MetaDetail; video: Video | null; videoId: string; ranked?: RankedStream[]; index?: number}
+  /** A blank moment between two players, so the stick releases the old video surface first. */
+  | {name: 'gap'; next: Route}
   | {name: 'search'}
   | {name: 'categories'}
   | {name: 'genre'; genre: string}
   | {name: 'settings'}
-  | {name: 'tv'; list: MergedChannel[]; index: number; feeds?: Source[]; title?: string; feedName?: string};
+  | {name: 'tv'; list: MergedChannel[]; index: number; feeds?: Source[]; title?: string; feedName?: string; eventKey?: string};
 
 const log = (line: string) => console.log(`[stremio] ${line}`);
 
@@ -48,6 +50,10 @@ export const App = () => {
   const [tab, setTab] = useState<BrowseTab>('home');
   const [stack, setStack] = useState<Route[]>([{name: 'browse'}]);
   const route = stack[stack.length - 1];
+  const playing = route.name === 'player' || route.name === 'tv' || route.name === 'gap';
+  useEffect(() => {
+    setTvBackgroundPaused(playing);
+  }, [playing]);
   const push = useCallback((next: Route) => setStack((s) => [...s, next]), []);
   const pop = useCallback(() => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)), []);
   const replaceTop = useCallback((next: Route) => setStack((s) => [...s.slice(0, -1), next]), []);
@@ -59,18 +65,21 @@ export const App = () => {
   const openCategories = useCallback(() => push({name: 'categories'}), [push]);
   const openSettings = useCallback(() => push({name: 'settings'}), [push]);
   const playChannel = useCallback((channel: MergedChannel, list: MergedChannel[]) => push({name: 'tv', list, index: Math.max(0, list.indexOf(channel))}), [push]);
+  const {setLast} = tv;
   const playEvent = useCallback(
     (event: SportEvent) => {
+      // Back from the event returns to Live Now, on this event.
+      setLast({category: LIVE_NOW_ID, channelId: event.key});
       const channel = event.channelId ? (tv.guide?.channels || []).find((c) => c.id === event.channelId) : undefined;
       if (channel) {
         // Play the channel within its category, so ▲/▼ zaps to its neighbours.
         const siblings = (tv.guide?.channels || []).filter((c) => c.category === channel.category);
-        push({name: 'tv', list: siblings, index: Math.max(0, siblings.indexOf(channel)), title: event.title});
+        push({name: 'tv', list: siblings, index: Math.max(0, siblings.indexOf(channel)), title: event.title, eventKey: event.key});
       } else if (event.feeds.length) {
-        push({name: 'tv', list: [], index: 0, feeds: event.feeds, title: event.title, feedName: event.channelName});
+        push({name: 'tv', list: [], index: 0, feeds: event.feeds, title: event.title, feedName: event.channelName, eventKey: event.key});
       }
     },
-    [push, tv.guide],
+    [push, tv.guide, setLast],
   );
 
   // Diagnostics: which catalogs the account's add-ons offer (names only).
@@ -146,19 +155,24 @@ export const App = () => {
           onPlay={(source, _metaId, videoId) => push({name: 'player', source, meta: route.meta, video: route.video, videoId})}
         />
       );
+    case 'gap':
+      return <Gap onDone={() => replaceTop(route.next)} />;
     case 'player': {
       const {ranked, index} = route;
       const next = nextEpisode(route.meta, route.video);
       return (
         <VideoScreen
-          key={route.source.url}
+          key={`${route.source.url}${route.source.engine ? '#engine' : ''}`}
           source={route.source}
           onExit={pop}
           onLog={log}
           onFailed={
             ranked && index != null
               ? (reason) => {
-                  log(`falling back after: ${reason}`);
+                  log(`falling back after: ${reason.slice(0, 200)}`);
+                  if (noteFailure(ranked[index], reason)) {
+                    log(`skipping ${ranked[index].addonName} for 30 min (its links fail on this network)`);
+                  }
                   forgetPick(route.meta, route.video);
                   replaceTop({name: 'starting', meta: route.meta, video: route.video, ranked, startIndex: index + 1, notice: 'Finding the best version…'});
                 }
@@ -168,6 +182,7 @@ export const App = () => {
           nextLabel="Next Episode"
           preferredSubtitle={state.subtitleLanguage}
           onSubtitleChosen={state.setSubtitleLanguage}
+          onUseEngine={(position) => replaceTop({name: 'gap', next: {...route, source: {...route.source, engine: true, startAt: position}}})}
           onRouteSwitched={(fromUrl, position) => {
             // Remember that this host cannot seek directly, then reopen on the PC route at
             // the same moment (a fresh player: Vega cannot reload a source in place).
@@ -199,7 +214,12 @@ export const App = () => {
           feedName={route.feedName}
           onExit={pop}
           onRanked={tv.refreshRanking}
-          onChannel={(c) => tv.setLast({category: c.category, channelId: c.id})}
+          onChannel={(c) =>
+            // Still on the event's own channel: keep Live Now as the place to return to.
+            route.eventKey && c.id === route.list[route.index]?.id
+              ? tv.setLast({category: LIVE_NOW_ID, channelId: route.eventKey})
+              : tv.setLast({category: c.category, channelId: c.id})
+          }
           log={log}
         />
       ) : null;
@@ -212,7 +232,7 @@ export const App = () => {
   // so Back is instant and lands on the same row and card. It is released during
   // playback to give the player the stick's memory.
   const top = route.name === 'browse' ? null : renderTop();
-  const keepBrowse = route.name !== 'player' && route.name !== 'tv';
+  const keepBrowse = route.name !== 'player' && route.name !== 'tv' && route.name !== 'gap';
   return (
     <View style={styles.fill}>
       {keepBrowse ? (
@@ -237,6 +257,16 @@ export const App = () => {
   );
 };
 
+/** Black for a moment, then the next screen (lets the stick free the previous player's surface). */
+const Gap = ({onDone}: {onDone: () => void}) => {
+  useEffect(() => {
+    const timer = setTimeout(onDone, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return <View style={styles.gap} />;
+};
+
 const BrowseRoot = ({active, ...props}: React.ComponentProps<typeof Browse> & {active: boolean}) => {
   useBackHandler(() => {
     if (props.tab !== 'home') {
@@ -254,6 +284,7 @@ const MemoBrowse = React.memo(Browse);
 const styles = StyleSheet.create({
   fill: {flex: 1, backgroundColor: brand.background},
   hidden: {display: 'none'},
+  gap: {flex: 1, backgroundColor: '#000'},
   layer: {position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: brand.background},
   loading: {flex: 1, backgroundColor: brand.background, justifyContent: 'center', alignItems: 'center'},
   loadingMark: {color: brand.accent, fontSize: 160, fontWeight: '900'},

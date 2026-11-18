@@ -3,7 +3,8 @@
 import {loadJson, saveJson} from '../../../../shared/src/storage';
 import {hostOf} from '../../../../shared/src/net';
 
-const KEY = 'stremio.badhosts.v1';
+// v2: cleared on 18 Nov (timeouts during testing had wrongly listed working debrid hosts).
+const KEY = 'stremio.badhosts.v3';
 const TTL = 3 * 24 * 3600 * 1000;
 
 let cache: Record<string, number> | null = null;
@@ -55,7 +56,7 @@ export async function isNoSeekHost(url: string): Promise<boolean> {
 
 // Timeouts can be a one-off (some add-ons resolve the debrid link on first request),
 // so a host is only marked bad after timing out twice.
-const STRIKES_KEY = 'stremio.hoststrikes.v1';
+const STRIKES_KEY = 'stremio.hoststrikes.v3';
 let strikes: Record<string, number> | null = null;
 
 export async function strikeHost(url: string): Promise<boolean> {

@@ -6,6 +6,8 @@ import {resolveStream, subtitleViaServer} from './streaming';
 import {MetaDetail, Stream, Video} from './types';
 import {rankSubtitles} from './subtitlePick';
 import {StremioState} from '../state';
+import {serverUp} from './autoPick';
+import {hostOf} from '../../../../shared/src/net';
 
 const LANGUAGE_NAMES: Record<string, string> = {
   eng: 'English', en: 'English', spa: 'Spanish', fre: 'French', fra: 'French', ger: 'German', deu: 'German',
@@ -55,6 +57,9 @@ export function nextEpisode(meta: MetaDetail, video: Video | null): Video | null
 const subtitleCache = new Map<string, Promise<SourcedSubtitle[]>>();
 
 /** All add-on subtitles for a title, cached for the session. */
+/** The community OpenSubtitles mirror host (blocked by some broadband providers). */
+const MIRROR = /^https?:\/\/opensubtitles\.stremio\.homes/i;
+
 export function subtitleList(state: StremioState, type: string, videoId: string): Promise<SourcedSubtitle[]> {
   const key = `${type}|${videoId}`;
   if (!subtitleCache.has(key)) {
@@ -83,19 +88,39 @@ export async function prepareSource(
   // ranked against this stream's release name, so starting playback does not wait.
   const fromAddons = await subtitleList(state, meta.type, videoId);
   const filename = hints.filename || [stream.title, stream.description].filter(Boolean).join(' ');
-  const all = rankSubtitles([...(stream.subtitles || []).map((s) => ({...s, source: 'Stream'})), ...fromAddons], filename).slice(0, 40);
+  const ranked = rankSubtitles([...(stream.subtitles || []).map((s) => ({...s, source: 'Stream'})), ...fromAddons], filename);
+  // The best match from every source first (so one blocked mirror cannot fill the list),
+  // then the rest in ranked order.
+  const leaders = ranked.filter((s, i) => ranked.findIndex((o) => o.source === s.source && o.lang === s.lang) === i);
+  const all = [...leaders, ...ranked.filter((s) => !leaders.includes(s))].slice(0, 60);
+  {
+    const bySource: Record<string, number> = {};
+    ranked.filter((s) => /^en/i.test(s.lang)).forEach((s) => {
+      const k = `${s.source}@${hostOf(s.url)}`;
+      bySource[k] = (bySource[k] || 0) + 1;
+    });
+    // eslint-disable-next-line no-console
+    console.log(`[stremio] english subtitles by source: ${Object.entries(bySource).map(([k, n]) => `${k}=${n}`).join(', ') || 'none'}`);
+    const sample = ranked.find((s) => /^en/i.test(s.lang));
+    // eslint-disable-next-line no-console
+    console.log(`[stremio] subtitle sample: ${sample ? sample.url.slice(0, 300) : 'none'}`);
+  }
   const counts: Record<string, number> = {};
+  // The PC server (it re-encodes to UTF-8 WebVTT) only when it is actually running.
+  const serverOn = await serverUp(state.server).catch(() => false);
   const subtitles: ExternalSubtitle[] = all.map((sub, index) => {
     const key = `${sub.lang}|${sub.source}`;
     counts[key] = (counts[key] || 0) + 1;
-    // Prefer the PC server (it re-encodes to UTF-8 WebVTT) and fall back to the direct address.
-    const viaServer = state.server ? subtitleViaServer(state.server, sub.url) : undefined;
+    const viaServer = serverOn && state.server ? subtitleViaServer(state.server, sub.url) : undefined;
+    // The community OpenSubtitles mirror is blocked by some UK broadband providers; the same
+    // files are on the official Stremio subtitle server, which is tried first.
+    const official = MIRROR.test(sub.url) ? sub.url.replace(MIRROR, 'https://subs5.strem.io') : undefined;
     return {
       id: `${sub.id || index}-${index}`,
       label: index === 0 && filename ? `${languageName(sub.lang)} · best match` : `${languageName(sub.lang)} · ${sub.source} ${counts[key]}`,
       language: sub.lang,
-      url: viaServer || sub.url,
-      fallbackUrl: viaServer ? sub.url : undefined,
+      url: viaServer || official || sub.url,
+      fallbackUrl: viaServer || official ? sub.url : undefined,
       fps: sub.fpsMilli ? sub.fpsMilli / 1000 : undefined,
     };
   });
