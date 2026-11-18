@@ -109,19 +109,22 @@ cloud workspace can't reach).
 
 ## Open issues (in priority order)
 
-1. **About 5 minutes into a film, playback stalls.** The spinner shows, then
-   the picture freezes until the viewer fast-forwards or rewinds, after which
-   it's fine for another ~5 minutes.
-   - Suspected cause: the MSE buffer fills. In `shared/src/mkv/session.ts`,
-     `AHEAD_SECONDS=30` and `BEHIND_SECONDS=20`; `trimBehind()` only runs under
-     back-pressure or after a quota error. About 450 MB of 4K is roughly
-     5 minutes.
-   - Planned fix:
-     1. capture the stick's logs during a stall (the dev shell service must be
-        running; reconnect `vda` first);
-     2. make sure watched data is really removed, and use a smaller look-ahead;
-     3. add a stall watchdog that re-seeks to the current position automatically.
-   - Don't install while the owner is watching: installing restarts the app.
+1. **About 5 minutes into a film, playback stalled** (spinner, frozen picture
+   until the viewer skipped). Fixed in code on 18 Nov; **not yet confirmed on the stick.**
+   - Cause found in `shared/src/mkv/session.ts`: any failed buffer write (quota
+     full, an `error` instead of `updateend`, a timeout) ended the read loop for
+     good, so playback ran out of buffer and froze until a seek restarted it.
+     Retries also re-converted the same frames, shifting their timestamps.
+   - Fix: the read loop recovers instead of stopping; pieces are converted once
+     and the same bytes retried; look-ahead is capped by bytes (64 MB, shrinking
+     to what the stick accepts after a quota error) as well as seconds; watched
+     data is trimmed at keyframe boundaries; a watchdog steps over small gaps,
+     restarts reading if it stopped, and reloads at the current position after
+     8 s frozen. Films played by the platform (MP4/HLS) get a re-seek watchdog.
+   - `scripts/dev/mkv-stall-sim.js` reproduces the stall with the old engine
+     (write error, tight quota, lost piece) and shows the new one playing through.
+   - On the stick, check the logs for `mkv: buffer limit reached`, `recovering`
+     and `stalled` lines during a long film.
 2. The FlixNest and test-app packages in `release/` are the old builds.
 3. Paused by the owner:
    - the Vega Shaka build (HLS/DASH; patches apply, but `npm ci` hit a

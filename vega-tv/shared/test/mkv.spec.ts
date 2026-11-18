@@ -88,3 +88,28 @@ const outDir = process.env.MKV_OUT;
     }
   });
 });
+
+describe('mkv buffering', () => {
+  const {bufferedEndAt, nextRangeAfter, trimPoint} = require('../src/mkv/session');
+  const ranges = [
+    {start: 0, end: 10},
+    {start: 10.6, end: 30},
+  ];
+
+  it('finds how far playback can run and the gap after it', () => {
+    expect(bufferedEndAt(ranges, 4)).toBe(10);
+    expect(nextRangeAfter(ranges, 10)).toBe(10.6);
+    expect(nextRangeAfter(ranges, 31)).toBeNull();
+  });
+
+  it('only trims at keyframe boundaries behind playback', () => {
+    const appended = [
+      {start: 0, end: 4, bytes: 1, key: true},
+      {start: 4, end: 8, bytes: 1, key: false},
+      {start: 8, end: 12, bytes: 1, key: true},
+      {start: 12, end: 16, bytes: 1, key: true},
+    ];
+    expect(trimPoint(appended, 11)).toBe(8);
+    expect(trimPoint(appended, 7)).toBe(0);
+  });
+});

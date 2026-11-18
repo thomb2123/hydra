@@ -515,6 +515,39 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
   );
   seekToRef.current = seekTo;
 
+  // Stall watchdog for films and episodes played by the platform (MP4, HLS):
+  // if the clock stands still for a while during playback, re-seek to where it
+  // stopped - what skipping back and forth used to fix by hand. Matroska files
+  // have their own watchdog in the in-app engine.
+  useEffect(() => {
+    if (source.live) {
+      return undefined;
+    }
+    let lastRecovery = 0;
+    const timer = setInterval(() => {
+      const player = playerRef.current;
+      if (!player || mkvRef.current || !startedRef.current || failedRef.current || seekTarget.current != null || scrubRef.current != null) {
+        return;
+      }
+      let paused = true;
+      try {
+        paused = !!player.paused;
+      } catch {
+        return;
+      }
+      const now = Date.now();
+      const stalledFor = lastTickAt.current ? now - lastTickAt.current : 0;
+      if (paused || stalledFor < 12000 || now - lastRecovery < 30000 || now - seekAt.current < 15000) {
+        return;
+      }
+      lastRecovery = now;
+      const t = Number(player.currentTime) || 0;
+      log(`stalled for ${Math.round(stalledFor / 1000)} s at ${t.toFixed(1)}; re-seeking to recover`);
+      seekToRef.current?.(Math.max(0, t - 1));
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [log, source.live, activeUrl]);
+
   const load = useCallback(() => {
     const player = playerRef.current;
     if (!player || !initialisedRef.current || !surfaceRef.current || loadedRef.current) {

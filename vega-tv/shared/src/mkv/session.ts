@@ -47,8 +47,89 @@ export interface MkvOptions {
 const CHUNK = 4 * 1024 * 1024;
 // Small first read so the picture appears quickly; later reads are larger.
 const FIRST_CHUNK = 2 * 1024 * 1024;
-const AHEAD_SECONDS = 30;
-const BEHIND_SECONDS = 20;
+// How much to keep buffered. The stick's media buffer is small, so the look-ahead is
+// limited by bytes as well as seconds (a 4K remux can be 60+ Mbit/s), and played
+// data is removed steadily, cut at cluster (keyframe) boundaries.
+const AHEAD_SECONDS = 20;
+const MIN_AHEAD_SECONDS = 6;
+const AHEAD_BYTES = 64 * 1024 * 1024;
+const BEHIND_SECONDS = 8;
+// Watchdog: how long the clock may stand still while playing before it steps in.
+const STALL_GAP_MS = 2500;
+const STALL_RESTART_MS = 8000;
+
+interface Appended {
+  start: number;
+  end: number;
+  bytes: number;
+  /** Starts with a keyframe: a safe place to cut. */
+  key: boolean;
+}
+
+/** End of the buffered range that contains `t` (or t itself if none does). */
+export function bufferedEndAt(ranges: {start: number; end: number}[], t: number): number {
+  for (const r of ranges) {
+    if (r.start <= t + 0.25 && r.end > t) {
+      return r.end;
+    }
+  }
+  return t;
+}
+
+/** Start of the next buffered range just after `t` (a gap the player cannot cross on its own). */
+export function nextRangeAfter(ranges: {start: number; end: number}[], t: number, within = 3): number | null {
+  for (const r of ranges) {
+    if (r.start > t + 0.05 && r.start - t <= within && r.end > r.start) {
+      return r.start;
+    }
+  }
+  return null;
+}
+
+/** Latest cut point (a fragment start, i.e. a keyframe) at or before `limit`. */
+export function trimPoint(appended: Appended[], limit: number): number {
+  let cut = 0;
+  for (const a of appended) {
+    if (a.key && a.start <= limit && a.start > cut) {
+      cut = a.start;
+    }
+  }
+  return cut;
+}
+
+function rangesOf(sb: any): {start: number; end: number}[] {
+  try {
+    const b = sb?.buffered;
+    if (!b || typeof b.length !== 'number') {
+      return [];
+    }
+    const out: {start: number; end: number}[] = [];
+    for (let i = 0; i < b.length; i++) {
+      out.push({start: b.start(i), end: b.end(i)});
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/** Ranges buffered in both the video and audio buffers (playback needs both). */
+function intersect(a: {start: number; end: number}[], b: {start: number; end: number}[] | null): {start: number; end: number}[] {
+  if (!b) {
+    return a;
+  }
+  const out: {start: number; end: number}[] = [];
+  for (const x of a) {
+    for (const y of b) {
+      const start = Math.max(x.start, y.start);
+      const end = Math.min(x.end, y.end);
+      if (end > start) {
+        out.push({start, end});
+      }
+    }
+  }
+  return out.sort((p, q) => p.start - q.start);
+}
 
 interface RangeRequest {
   promise: Promise<Uint8Array>;
@@ -277,8 +358,12 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
   const vsb = ms.addSourceBuffer(remux.video.config.mime);
   const asb = remux.audio ? ms.addSourceBuffer(remux.audio.config.mime) : null;
 
+  // Appends one piece, retrying the same bytes: when the buffer is full, wait for
+  // playback to use some of it (trimming what has been watched); other errors get a
+  // few quick retries. Throws only if the piece cannot be written at all.
   const append = async (sb: any, data: Uint8Array) => {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    let errors = 0;
+    for (let attempt = 0; ; attempt++) {
       try {
         if (sb.updating) {
           await waitFor(sb, 'updateend');
@@ -287,11 +372,22 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
         await waitFor(sb, 'updateend');
         return;
       } catch (e: any) {
-        if (/quota/i.test(String(e?.name || e?.message || e)) && attempt < 2) {
+        if (closed) {
+          throw e;
+        }
+        if (/quota/i.test(String(e?.name || e?.message || e))) {
+          learnQuota();
+          if (attempt >= 40) {
+            throw e;
+          }
           await trimBehind(true);
+          await delay(500);
           continue;
         }
-        throw e;
+        if (++errors >= 3) {
+          throw e;
+        }
+        await delay(300);
       }
     }
   };
@@ -310,15 +406,31 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
     }
   };
   let trimmedTo = 0;
+  let appended: Appended[] = [];
   const trimBehind = async (force = false) => {
     const now = Number(player.currentTime) || 0;
-    const cut = now - (force ? 5 : BEHIND_SECONDS);
-    if (cut > trimmedTo + (force ? 0 : 10)) {
+    // Cut at a fragment start so no frame the picture still depends on is removed.
+    const cut = trimPoint(appended, now - (force ? 1.5 : BEHIND_SECONDS));
+    if (cut > trimmedTo + (force ? 0 : 4)) {
       await removeRange(vsb, 0, cut);
       await removeRange(asb, 0, cut);
       trimmedTo = cut;
+      appended = appended.filter((a) => a.end > cut);
     }
   };
+  // The look-ahead budget shrinks to what the platform really accepts: after a
+  // "buffer full" error it is set a little under the amount that was buffered.
+  let aheadBytes = AHEAD_BYTES;
+  const learnQuota = () => {
+    const held = appended.reduce((sum, a) => sum + a.bytes, 0);
+    const next = Math.max(1024 * 1024, Math.floor(held * 0.6));
+    if (next < aheadBytes) {
+      aheadBytes = next;
+      log(`mkv: buffer limit reached at ${(held / 1048576).toFixed(1)} MB; keeping about ${(next / 1048576).toFixed(1)} MB ahead from now on`);
+    }
+  };
+  const bytesAhead = (now: number) => appended.reduce((sum, a) => (a.end > now ? sum + a.bytes : sum), 0);
+  const playable = () => intersect(rangesOf(vsb), asb ? rangesOf(asb) : null);
 
   await append(vsb, remux.video.init);
   if (asb && remux.audio) {
@@ -329,6 +441,9 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
   let current: RangeRequest | null = null;
   let bufferedEnd = 0;
   let closed = false;
+  let pumping = false;
+  let ended = false;
+  let restartedAt = 0;
 
   const handleFrames = (frames: {track: number; pts: number; duration?: number; data: Uint8Array}[]) => {
     let added = false;
@@ -348,47 +463,105 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
   };
 
   const pump = async (gen: number) => {
-    while (!closed && gen === generation) {
-      // Back-pressure: keep about AHEAD_SECONDS buffered.
-      const now = Number(player.currentTime) || 0;
-      if (bufferedEnd - now > AHEAD_SECONDS) {
-        await trimBehind();
-        await delay(500);
-        continue;
+    pumping = true;
+    let failures = 0;
+    try {
+      while (!closed && gen === generation) {
+        try {
+          const done = await pumpOnce(gen);
+          failures = 0;
+          if (done) {
+            return;
+          }
+        } catch (e: any) {
+          if (closed || gen !== generation) {
+            return;
+          }
+          // A failed append used to stop reading for good (the picture froze once the
+          // buffer ran dry, until the viewer skipped). Now: free space and carry on.
+          failures++;
+          log(`mkv: buffer write failed (${e?.message || e}); recovering (${failures})`);
+          await trimBehind(true).catch(() => undefined);
+          await delay(Math.min(4000, 500 * failures));
+          if (failures >= 4) {
+            log('mkv: restarting the stream at the current position');
+            restart();
+            return;
+          }
+        }
       }
-      // Parse every complete cluster we already have.
-      let pos = 0;
+    } finally {
+      if (gen === generation) {
+        pumping = false;
+      }
+    }
+  };
+
+  /** One step of reading: returns true at the end of the file. */
+  const pumpOnce = async (gen: number): Promise<boolean> => {
+    {
+      // Back-pressure: keep up to AHEAD_SECONDS (and at most AHEAD_BYTES) buffered,
+      // but always at least a few seconds so high-bitrate files never starve.
+      const now = Number(player.currentTime) || 0;
+      await trimBehind();
+      const ahead = bufferedEnd - now;
+      if (ahead > MIN_AHEAD_SECONDS && (ahead > AHEAD_SECONDS || bytesAhead(now) > aheadBytes)) {
+        await delay(400);
+        return false;
+      }
+      // Parse the complete clusters we already have, one at a time, checking for room
+      // before each. Each cluster is converted once and marked as read before it is
+      // written, so a retry never feeds the same frames through the converter twice.
+      let parsed = 0;
       for (;;) {
-        const cluster = parseCluster(pending, pos, pendingBase, info.timecodeScale, wanted);
+        const t = Number(player.currentTime) || 0;
+        const room = bufferedEnd - t;
+        if (parsed > 0 && room > MIN_AHEAD_SECONDS && (room > AHEAD_SECONDS || bytesAhead(t) > aheadBytes)) {
+          return false;
+        }
+        const cluster = parseCluster(pending, 0, pendingBase, info.timecodeScale, wanted);
         if (!cluster) {
           break;
         }
+        parsed++;
+        pending = pending.subarray(cluster.end - pendingBase);
+        pendingBase = cluster.end;
         handleFrames(cluster.frames);
         const seg = remux.fragment(cluster.frames);
         if (gen !== generation) {
-          return;
+          return true;
         }
-        if (seg.video) {
-          await append(vsb, seg.video);
-        }
-        if (seg.audio && asb) {
-          await append(asb, seg.audio);
+        try {
+          if (seg.video) {
+            await append(vsb, seg.video);
+          }
+          if (seg.audio && asb) {
+            await append(asb, seg.audio);
+          }
+        } catch (e: any) {
+          if (gen !== generation || closed) {
+            return true;
+          }
+          // This piece could not be written: skip it (the watchdog steps over the small
+          // gap) rather than stopping or re-converting it.
+          log(`mkv: skipped a piece at ${(seg.start ?? 0).toFixed(1)} s (${e?.message || e})`);
+          throw e;
         }
         if (seg.end) {
           bufferedEnd = Math.max(bufferedEnd, seg.end);
+          const firstVideo = cluster.frames.find((f) => f.track === remux.video!.track.number);
+          appended.push({start: seg.start ?? seg.end, end: seg.end, bytes: (seg.video?.length || 0) + (seg.audio?.length || 0), key: !!firstVideo?.keyframe});
         }
-        pos = cluster.end - pendingBase;
       }
-      if (pos > 0) {
-        pending = pending.slice(pos);
-        pendingBase += pos;
+      if (parsed > 0) {
+        pending = pending.slice(0);
       } else if (pending.length > 0 && readHeader(pending, 0)?.id !== 0x1f43b675) {
         // Not at a cluster boundary (e.g. Void/Tags between clusters): skip to the next one.
         const next = findNextCluster(pending, 1);
         if (next > 0) {
           pending = pending.slice(next);
           pendingBase += next;
-          continue;
+          return false;
         }
       }
       if (offset >= fileEnd) {
@@ -401,8 +574,9 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
         } catch {
           // Already ended.
         }
+        ended = true;
         log('mkv: reached end of file');
-        return;
+        return true;
       }
       const next = Math.min(offset + CHUNK - 1, Number.isFinite(fileEnd) ? fileEnd - 1 : offset + CHUNK - 1);
       current = fetchRange(url, offset, next);
@@ -411,20 +585,21 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
         chunk = await current.promise;
       } catch (e: any) {
         if (gen !== generation || closed) {
-          return;
+          return true;
         }
         log(`mkv: read failed at ${offset} (${e?.message || e}), retrying`);
         await delay(1000);
-        continue;
+        return false;
       }
       if (gen !== generation) {
-        return;
+        return true;
       }
       pending = concatBytes(pending, chunk);
       offset += chunk.length;
       if (chunk.length === 0) {
         offset = fileEnd;
       }
+      return false;
     }
   };
 
@@ -442,8 +617,91 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
       pendingBase = offset;
     }
     bufferedEnd = 0;
+    ended = false;
     pump(gen).catch((e: any) => log(`mkv: pump stopped (${e?.message || e})`));
   };
+
+  /** Drop everything buffered and refill from the cluster before `time`. */
+  const reload = async (time: number) => {
+    generation++;
+    current?.abort();
+    const all = (info.duration || 0) + 3600;
+    await removeRange(vsb, 0, all);
+    await removeRange(asb, 0, all);
+    trimmedTo = 0;
+    appended = [];
+    try {
+      player.currentTime = time;
+    } catch {
+      // Ignore.
+    }
+    await start(time);
+  };
+  const restart = () => {
+    restartedAt = Date.now();
+    seekingUntil = restartedAt + 4000;
+    const t = Math.max(0, (Number(player.currentTime) || 0) - 0.5);
+    reload(t).catch((e: any) => log(`mkv: restart failed (${e?.message || e})`));
+  };
+
+  // Stall watchdog: if the clock stands still while playing, first jump any small gap
+  // in the buffer, then restart reading if it stopped, then reload at the current
+  // position (what skipping back and forth used to fix by hand).
+  let lastTime = -1;
+  let stillSince = 0;
+  let seekingUntil = 0;
+  // Only once the picture has actually moved: the first start has its own timeout.
+  let progressed = false;
+  const watchdog = setInterval(() => {
+    if (closed) {
+      return;
+    }
+    const t = Number(player.currentTime) || 0;
+    const nowMs = Date.now();
+    if (player.paused || nowMs < seekingUntil || Math.abs(t - lastTime) > 0.05 || !progressed) {
+      if (lastTime >= 0 && Math.abs(t - lastTime) > 0.05 && !player.paused) {
+        progressed = true;
+      }
+      lastTime = t;
+      stillSince = nowMs;
+      return;
+    }
+    const still = nowMs - stillSince;
+    if (still < STALL_GAP_MS || (ended && info.duration && t > info.duration - 2)) {
+      return;
+    }
+    const ranges = playable();
+    const gap = nextRangeAfter(ranges, t, 30);
+    if (gap != null && gap - t <= 1) {
+      // A sliver missing: step over it (unnoticeable).
+      log(`mkv: stalled at ${t.toFixed(2)}; skipping a ${(gap - t).toFixed(2)} s gap`);
+      try {
+        player.currentTime = gap + 0.05;
+      } catch {
+        // Ignore.
+      }
+      stillSince = nowMs;
+      return;
+    }
+    if (gap != null && nowMs - restartedAt > 10000) {
+      // A larger hole: re-read from here so nothing is skipped.
+      log(`mkv: stalled at ${t.toFixed(2)} before a ${(gap - t).toFixed(1)} s hole; re-reading from here`);
+      stillSince = nowMs;
+      restart();
+      return;
+    }
+    if (!pumping && !ended) {
+      log(`mkv: stalled at ${t.toFixed(2)} and reading had stopped; restarting`);
+      stillSince = nowMs;
+      restart();
+      return;
+    }
+    if (still >= STALL_RESTART_MS && nowMs - restartedAt > 20000) {
+      log(`mkv: stalled at ${t.toFixed(2)} for ${Math.round(still / 1000)} s (buffered to ${bufferedEndAt(ranges, t).toFixed(1)}); reloading here`);
+      stillSince = nowMs;
+      restart();
+    }
+  }, 1000);
 
   log(`mkv: ready in ${Date.now() - began} ms: ${remux.video.config.label} + ${remux.audio?.config.label || 'no audio'} (${audioTrack?.language}); ${cues.length} cues; ${subtitleTracks.length} subtitle tracks`);
   offset = clusterAt(startAt);
@@ -466,26 +724,15 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
     },
     seek(time: number) {
       const t = Math.max(0, Math.min(time, (info.duration || time) - 1));
-      // Drop everything buffered and refill from the cluster before `t`.
-      (async () => {
-        generation++;
-        current?.abort();
-        const all = (info.duration || 0) + 3600;
-        await removeRange(vsb, 0, all);
-        await removeRange(asb, 0, all);
-        trimmedTo = 0;
-        try {
-          player.currentTime = t;
-        } catch {
-          // Ignore.
-        }
-        await start(t);
-        log(`mkv: seek to ${t.toFixed(1)} (cluster at byte ${offset})`);
-      })().catch((e: any) => log(`mkv: seek failed (${e?.message || e})`));
+      seekingUntil = Date.now() + 6000;
+      reload(t)
+        .then(() => log(`mkv: seek to ${t.toFixed(1)} (cluster at byte ${offset})`))
+        .catch((e: any) => log(`mkv: seek failed (${e?.message || e})`));
     },
     unload() {
       closed = true;
       generation++;
+      clearInterval(watchdog);
       current?.abort();
     },
   };
