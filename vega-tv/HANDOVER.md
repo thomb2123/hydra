@@ -144,7 +144,7 @@ cloud workspace can't reach).
 - **Guide navigation:** `TVFocusGuideView` (left returns to the current category, right to
   the last channel), category switch debounced, no focus grabbing after the first view.
 
-- **Official guide (`tv/skyGuide.ts`):** for the 74 UK channels Sky carries, now/next comes
+- **Official guide (`tv/skyGuide.ts`):** for the 72 UK channels Sky carries, now/next comes
   from Sky's own listings (`awk.epgsky.com/hawk/linear/schedule/{YYYYMMDD}/{sid}`, reachable
   from the stick in ~0.1 s, cached 30 min), with synopses. Sky titles live shows "Live …", so
   LIVE is Sky's word; a match on a sports channel that Sky does not list as live is tagged
