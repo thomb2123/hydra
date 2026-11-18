@@ -10,9 +10,13 @@
 //   node mkv-stall-sim.js new <normal|error|quota|gap|seek> film.mkv 400
 //
 // Scenarios: error = one buffer write fails ~4 min in; quota = 2.5 MB buffer;
-// gap = one piece silently lost; seek = jump from 100 s to 300 s.
+// gap = one piece silently lost; seek = jump from 100 s to 300 s;
+// nofree = the platform keeps watched video in memory unless everything is cleared.
 // Results (18 Nov): the previous engine froze for good on "error", "quota" and
-// "gap" (the 5-minute stall); this one plays through all of them.
+// "gap" and "nofree" (the 5-minute stall); this one plays through all of them.
+// Plays a real MKV through the MKV engine against a simulated Vega media pipeline:
+// SourceBuffers with a byte quota and keyframe-accurate removal, a playback clock
+// that only advances through buffered (audio AND video) time, and fault injection.
 // Plays a real MKV through the MKV engine against a simulated Vega media pipeline:
 // SourceBuffers with a byte quota and keyframe-accurate removal, a playback clock
 // that only advances through buffered (audio AND video) time, and fault injection.
@@ -51,11 +55,11 @@ class Target {
   removeEventListener(n, f) { this.l[n] = (this.l[n] || []).filter((x) => x !== f); }
   emit(n) { for (const f of [...(this.l[n] || [])]) f(); }
 }
-const QUOTA = scenario === 'quota' ? 2.5e6 : 12e6;
+const QUOTA = scenario === 'quota' ? 2.5e6 : scenario === 'nofree' ? 6e6 : 12e6;
 let appends = 0;
 class SB extends Target {
   constructor(kind) { super(); this.kind = kind; this.frags = []; this.updating = false; }
-  get bytes() { return this.frags.reduce((s, f) => s + f.bytes, 0); }
+  get bytes() { return this.frags.reduce((s, f) => s + f.bytes, 0) + (this.leaked || 0); }
   get buffered() {
     const fr = [...this.frags].sort((a, b) => a.start - b.start);
     const r = [];
@@ -83,7 +87,13 @@ class SB extends Target {
     this.updating = true;
     // Coded frames from start..end go, plus everything up to the next keyframe
     // (= the rest of any fragment that starts before `end`).
+    const gone = this.frags.filter((f) => f.start < end && f.end > start);
     this.frags = this.frags.filter((f) => !(f.start < end && f.end > start));
+    // "nofree": the platform drops watched video from playback but keeps its memory,
+    // except when everything is cleared (what a seek does).
+    if (scenario === 'nofree') {
+      if (end > 3000) this.leaked = 0; else this.leaked = (this.leaked || 0) + gone.reduce((s, f) => s + f.bytes, 0);
+    }
     setTimeout(() => { this.updating = false; this.emit('updateend'); }, 2);
   }
 }

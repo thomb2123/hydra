@@ -377,8 +377,14 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
         }
         if (/quota/i.test(String(e?.name || e?.message || e))) {
           learnQuota();
-          if (attempt >= 40) {
-            throw e;
+          // Trimming has not made room and the picture is about to run dry: the
+          // platform is holding on to watched video. Start fresh at this spot (what
+          // skipping did by hand) instead of letting the picture freeze.
+          const left = bufferedEnd - (Number(player.currentTime) || 0);
+          if (attempt >= 40 || (attempt >= 2 && left < 2.5)) {
+            const full = new Error(`buffer full with ${left.toFixed(1)} s left`);
+            full.name = 'BufferStuck';
+            throw full;
           }
           await trimBehind(true);
           await delay(500);
@@ -479,6 +485,11 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
           }
           // A failed append used to stop reading for good (the picture froze once the
           // buffer ran dry, until the viewer skipped). Now: free space and carry on.
+          if (e?.name === 'BufferStuck') {
+            log(`mkv: the player did not free watched video (${e.message}); refreshing at the current position`);
+            restart();
+            return;
+          }
           failures++;
           log(`mkv: buffer write failed (${e?.message || e}); recovering (${failures})`);
           await trimBehind(true).catch(() => undefined);
