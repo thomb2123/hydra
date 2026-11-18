@@ -15,7 +15,9 @@ export function createFeaturedStore(): FeaturedStore {
   return {
     get: () => current,
     set: (meta) => {
-      if (meta === current || (meta && current && meta.id === current.id)) {
+      // The same title again is ignored, unless it now comes with its details (a Continue
+      // Watching card first shows only its name, then its full details arrive).
+      if (meta === current || (meta && current && meta.id === current.id && !(meta.description && !current.description))) {
         return;
       }
       current = meta;

@@ -460,8 +460,12 @@ async function checkAgainstGuide(acc: fx.Access, events: SportEvent[], g: GuideD
       // The channel has a real TV guide (Sky / Virgin / TV Guide): it must list this match
       // now. If it lists something else, the channel is not carrying it; a direct feed may
       // still be offered, marked unconfirmed.
-      if (v.agrees === 'match') {
+      if (v.agrees === 'match' && v.saysLive) {
         out.push({...e, confirmed: true});
+      } else if (v.agrees === 'match') {
+        // The guide shows this very match but not as live: a re-run (the feed's "live"
+        // was wrong), so it is not offered as live sport.
+        continue;
       } else if (e.feeds.length && e.verified) {
         out.push({...e, channelId: undefined, channelName: feedLabel(e.feeds[0].rawName), confirmed: false});
       }

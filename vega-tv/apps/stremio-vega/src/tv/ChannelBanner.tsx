@@ -20,9 +20,11 @@ export interface BannerProps {
   status?: string;
   /** A sports channel (a match the official guide does not list as live is a re-run). */
   sport?: boolean;
+  /** Remote hints along the bottom (e.g. "OK  Channels"). */
+  hint?: string;
 }
 
-export const ChannelBanner = ({number, name, logo, badge, info, fallbackTitle, status, sport}: BannerProps) => {
+export const ChannelBanner = ({number, name, logo, badge, info, fallbackTitle, status, sport, hint}: BannerProps) => {
   const now = info?.now;
   const next = info?.next;
   const nowTitle = now?.title ? displayTitle(now) : fallbackTitle || '';
@@ -76,6 +78,11 @@ export const ChannelBanner = ({number, name, logo, badge, info, fallbackTitle, s
               {`${timeRange(next).split('–')[0]}   ${displayTitle(next)}`}
             </Text>
           ) : null}
+          {hint ? (
+            <Text style={styles.hint} numberOfLines={1}>
+              {hint}
+            </Text>
+          ) : null}
         </View>
       </View>
     </View>
@@ -83,6 +90,7 @@ export const ChannelBanner = ({number, name, logo, badge, info, fallbackTitle, s
 };
 
 const styles = StyleSheet.create({
+  hint: {color: brand.textMuted, fontSize: type.tiny, marginTop: 10},
   wrap: {position: 'absolute', left: 0, right: 0, bottom: 0, height: 420, justifyContent: 'flex-end'},
   shade: {position: 'absolute', left: 0, right: 0, bottom: 0, height: 420, backgroundColor: 'rgba(0,0,0,0.72)'},
   bar: {flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 96, paddingBottom: 64, paddingTop: 36},

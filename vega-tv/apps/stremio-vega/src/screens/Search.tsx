@@ -94,8 +94,11 @@ export const Search = ({state, openMeta, openGenre, onBack, channels = [], event
       for (let i = 0; i < 40; i++) {
         for (const list of lists) {
           const m = list[i];
-          if (m && !seen.has(m.id)) {
+          // The same title from two add-ons (different ids) is shown once.
+          const same = m ? `${m.type}|${String(m.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '')}|${String((m as any).releaseInfo || (m as any).year || '').slice(0, 4)}` : '';
+          if (m && !seen.has(m.id) && !seen.has(same)) {
             seen.add(m.id);
+            seen.add(same);
             merged.push(m);
           }
         }

@@ -7,6 +7,7 @@ import {useBackHandler} from '../../../../shared/src/tv/remote';
 import {requestJson} from '../../../../shared/src/net';
 import * as api from '../stremio/api';
 import {normaliseServerUrl} from '../stremio/streaming';
+import {languageName} from '../stremio/playback';
 import {STICK_ONLY, StremioState, SUBTITLE_SIZES, SubtitleSize} from '../state';
 import {TvState} from '../tv/useTv';
 import {TvConnect} from './TvGuide';
@@ -98,7 +99,7 @@ export const Settings = ({state, tv, onBack}: {state: StremioState; tv: TvState;
         />
       </View>
       <Text style={styles.muted}>
-        {state.subtitleLanguage ? `Subtitles turn on by themselves in the language you last chose (${state.subtitleLanguage}).` : 'Subtitles start off; choosing a language while watching makes it the default.'}
+        {state.subtitleLanguage ? `Subtitles turn on by themselves in the language you last chose (${languageName(state.subtitleLanguage)}).` : 'Subtitles start off; choosing a language while watching makes it the default.'}
       </Text>
 
       <Text style={styles.heading}>Live TV (FlixNest)</Text>

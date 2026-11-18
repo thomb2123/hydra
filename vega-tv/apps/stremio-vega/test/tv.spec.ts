@@ -474,3 +474,24 @@ describe('search finds live TV', () => {
     expect(matchEvents(events, 'ar')).toEqual([]);
   });
 });
+
+import {guideAgrees as agrees} from '../src/tv/events';
+
+describe('live now does not confirm on a shared word', () => {
+  const now = 1_800_000_000;
+  const slot = (title: string) => ({title, start: now - 600, end: now + 3600});
+  test('another Grand Prix is not this race', () => {
+    const e = {title: 'IndyCar: Mission Foods Grand Prix of Monterey', competition: 'IndyCar', sport: 'Motorsport'};
+    expect(agrees(e, slot('Las Vegas F1 Grand Prix 2025'), now)).not.toBe('match');
+  });
+  test('the same race is', () => {
+    const e = {title: 'IndyCar: Mission Foods Grand Prix of Monterey', competition: 'IndyCar', sport: 'Motorsport'};
+    expect(agrees(e, slot('Live IndyCar: Grand Prix Of Monterey'), now)).toBe('match');
+  });
+  test('a fixture needs both sides', () => {
+    const e = {title: 'Arsenal v Chelsea', competition: 'Premier League', sport: 'Football'};
+    expect(agrees(e, slot('Live Arsenal v Tottenham'), now)).not.toBe('match');
+    expect(agrees(e, slot('Live: Arsenal v Chelsea'), now)).toBe('match');
+    expect(agrees({title: 'Gane v Hokit', competition: 'UFC 334', sport: 'UFC & MMA'}, slot('UFC 334 - Gane vs Hokit'), now)).toBe('match');
+  });
+});

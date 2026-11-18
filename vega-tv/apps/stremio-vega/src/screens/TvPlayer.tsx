@@ -18,6 +18,7 @@ import {recordResult} from '../tv/guide';
 import {probeStream} from '../tv/probe';
 import {Status, cachedStatus, checkSource, firstLive, heightOf, markFailed, prefetchChannel} from '../tv/tune';
 import {ChannelBanner} from '../tv/ChannelBanner';
+import {MiniGuide} from '../tv/MiniGuide';
 
 export interface TvPlayerProps {
   access: fx.Access;
@@ -49,6 +50,8 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
   const [source, setSource] = useState<PlaySource | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [panel, setPanel] = useState(false);
+  /** The channel list over the picture (OK while the banner is showing). */
+  const [channelList, setChannelList] = useState(false);
   const [info, setInfo] = useState<NowNext | null>(null);
   const [banner, setBanner] = useState(true);
   const [note, setNote] = useState<string | null>(null);
@@ -257,6 +260,19 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
     },
     [feeds, list.length],
   );
+  const canList = !feeds && list.length > 1;
+  const chooseFromList = useCallback(
+    (i: number) => {
+      setChannelList(false);
+      if (i !== index) {
+        previousIndex.current = index;
+        setIndex(i);
+      } else {
+        showBanner();
+      }
+    },
+    [index, showBanner],
+  );
   const backToPrevious = useCallback(() => {
     const prev = previousIndex.current;
     if (feeds || prev == null || prev === index || prev >= list.length) {
@@ -297,6 +313,10 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
   );
 
   useBackHandler(() => {
+    if (channelList) {
+      setChannelList(false);
+      return true;
+    }
     if (panel) {
       setPanel(false);
       return true;
@@ -322,6 +342,7 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
       sport={!!channel && (channel.category === 'uk-sport' || channel.category === 'us-sport')}
       fallbackTitle={feeds ? title : undefined}
       status={!source ? note || 'Tuning…' : undefined}
+      hint={source ? [canList ? 'OK  All channels' : '', sources.length > 1 ? '☰  Sources' : '', canList ? '▲▼  Change channel' : '', previousIndex.current != null && canList ? '◀  Last channel' : ''].filter(Boolean).join('      ') : undefined}
     />
   );
 
@@ -390,13 +411,22 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
           onZap={feeds ? undefined : zap}
           onPrevious={feeds ? undefined : backToPrevious}
           onMenu={sources.length > 1 ? () => setPanel(true) : undefined}
-          onInfo={() => showBanner(8000)}
+          onInfo={() => {
+            // OK shows the banner; OK again (banner up) opens the channel list.
+            if (banner && canList) {
+              setChannelList(true);
+              setBanner(false);
+            } else {
+              showBanner(8000);
+            }
+          }}
           chromeless
-          inputLocked={panel}
+          inputLocked={panel || channelList}
         />
       ) : null}
-      {banner || !source ? bannerView : null}
+      {(banner || !source) && !channelList ? bannerView : null}
       {sourcesPanel}
+      {channelList && canList ? <MiniGuide access={access} list={list} current={index} onChoose={chooseFromList} /> : null}
     </View>
   );
 };

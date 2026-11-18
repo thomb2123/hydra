@@ -17,6 +17,11 @@ import {StremioState} from '../state';
 // Title details for the session: reopening a title (e.g. after watching) is instant.
 const metaCache = new Map<string, MetaDetail>();
 
+/** Details of a title already opened this session (the home billboard reuses them). */
+export function cachedMeta(type: string, id: string): MetaDetail | undefined {
+  return metaCache.get(`${type}:${id}`);
+}
+
 export interface DetailProps {
   state: StremioState;
   type: string;

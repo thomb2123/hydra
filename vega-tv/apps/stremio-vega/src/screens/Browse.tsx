@@ -11,6 +11,7 @@ import {brand, edge, type} from '../ui/brand';
 import {RowSpec, Tab, rowsForTab} from '../stremio/rows';
 import {recommendationRows} from '../stremio/recommend';
 import {fetchMeta} from '../stremio/addons';
+import {cachedMeta} from './Detail';
 import {LibraryItem, MetaPreview} from '../stremio/types';
 import {StremioState, continueWatching} from '../state';
 import {TvGuide} from './TvGuide';
@@ -46,7 +47,7 @@ const TABS: {key: BrowseTab; label: string}[] = [
 
 // Continue Watching and My List entries carry only a name and poster; the billboard
 // fills in artwork, year, rating and synopsis from the title's details (once each).
-const fullPreview = new Map<string, MetaPreview | null>();
+const fullPreview = new Map<string, MetaPreview>();
 
 function libraryPreview(item: LibraryItem): MetaPreview {
   return {id: item._id, type: item.type, name: item.name, poster: item.poster || undefined};
@@ -145,16 +146,22 @@ export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories
         if (meta.description || known !== undefined) {
           return;
         }
-        fetchMeta(addonsRef.current, meta.type || 'movie', meta.id)
+        const opened = cachedMeta(meta.type || 'movie', meta.id);
+        (opened ? Promise.resolve(opened) : fetchMeta(addonsRef.current, meta.type || 'movie', meta.id))
           .then((full) => {
-            const merged = full ? {...meta, ...full, id: meta.id, type: meta.type || full.type} : null;
+            if (!full) {
+              // eslint-disable-next-line no-console
+              console.log(`[stremio] billboard: no details for ${meta.type} ${meta.id} (${addonsRef.current.length} add-ons)`);
+              return; // not remembered: tried again next time
+            }
+            const merged = {...meta, ...full, id: meta.id, type: meta.type || full.type};
             fullPreview.set(meta.id, merged);
             // Still the title in focus: show the details.
             if (merged && lastFocus.current?.id === meta.id) {
               featured.set(merged);
             }
           })
-          .catch(() => fullPreview.set(meta.id, null));
+          .catch((e) => console.log(`[stremio] billboard: details for ${meta.name} failed: ${e?.message || e}`));
       }, 350);
     },
     [featured],

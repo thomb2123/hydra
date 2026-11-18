@@ -203,11 +203,15 @@ export function liveNow(events: SportEvent[], now = Date.now() / 1000): SportEve
 }
 
 /** Words that identify the event in a guide listing ("Wales v Portugal" -> wales, portugal). */
+// Words shared by many unrelated events ("Grand Prix", "World Championship", years):
+// they never identify a match on their own.
+const GENERIC_TOKEN = /^(?:united|city|town|county|rovers|athletic|club|fight|night|main|card|live|league|cup|grand|prix|world|championship|championships|open|final|finals|semi|quarter|series|round|race|racing|trophy|masters|classic|international|premier|super|sport|sports|season|match|game|games|week|weekend|highlights|show|tour|qualifying|practice|sprint|event|stage|tournament|day|replay|best|women|womens|mens|national|global)$/;
+
 export function eventTokens(title: string): string[] {
   return title
     .split(/\s+(?:v|vs\.?|at|@)\s+|\s*[·:,-]\s*/i)
     .flatMap((side) => side.toLowerCase().split(/[^a-z0-9]+/))
-    .filter((w) => w.length >= 4 && !/^(?:united|city|town|county|rovers|athletic|club|fight|night|main|card|live|league|cup)$/.test(w));
+    .filter((w) => w.length >= 4 && !/^\d+$/.test(w) && !GENERIC_TOKEN.test(w));
 }
 
 /** True when a listing names both sides of the fixture ("Internazionale at Real Madrid" for "Real Madrid v Inter"). */
@@ -235,7 +239,11 @@ export function guideAgrees(event: Pick<SportEvent, 'title' | 'competition' | 's
   }
   const lower = title.toLowerCase();
   const tokens = eventTokens(event.title);
-  const named = tokens.some((t) => lower.includes(t));
+  // A fixture needs both sides named; anything else (a race, a tournament) at least two
+  // of its distinctive words (one shared word is not enough: "Grand Prix of Monterey"
+  // is not the "Las Vegas Grand Prix").
+  const twoSided = event.title.split(/\s+(?:v|vs\.?|at|@)\s+/i).length === 2;
+  const named = twoSided ? listingNamesFixture(event.title, title) : tokens.filter((t) => lower.includes(t)).length >= Math.min(2, tokens.length) && tokens.length > 0;
   if (named) {
     return NOT_LIVE.test(title) && !/\blive\b/i.test(title) ? 'other' : 'match';
   }
