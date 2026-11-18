@@ -9,7 +9,7 @@ import {backdropOf, logoOf, ratingOf, yearOf} from '../ui/art';
 import {brand, edge, type} from '../ui/brand';
 import {fetchMeta} from '../stremio/addons';
 import {prefetchPick} from '../stremio/autoPick';
-import {subtitleList, videoIdOf} from '../stremio/playback';
+import {nextEpisode, subtitleList, videoIdOf} from '../stremio/playback';
 import {similarTitles} from '../stremio/recommend';
 import {MetaDetail, MetaPreview, Video} from '../stremio/types';
 import {StremioState} from '../state';
@@ -45,7 +45,8 @@ const EpisodeCard = ({video, progress, onPress, preferred}: {video: Video; progr
       style={[styles.episode, focused && styles.episodeFocused]}>
       <View style={styles.episodeArt}>
         {video.thumbnail ? <Image source={{uri: video.thumbnail}} style={styles.fill} resizeMode="cover" /> : null}
-        {progress ? (
+        {progress != null && progress >= 0.95 ? <Text style={styles.watched}>✓ Watched</Text> : null}
+        {progress && progress < 0.95 ? (
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, {width: `${Math.min(100, progress * 100)}%`}]} />
           </View>
@@ -134,14 +135,28 @@ export const Detail = ({state, type, id, preview, play, openStreams, onBack, ope
         bestAt = r.at;
       }
     }
-    if (!best && library?.state.video_id) {
+    let finished = false;
+    if (best) {
+      const r = state.resume[best.id];
+      finished = !!r && r.duration > 0 && r.position >= Math.min(r.duration - 90, r.duration * 0.95);
+    } else if (library?.state.video_id) {
       best = videos.find((v) => v.id === library.state.video_id) || null;
+      const {timeOffset = 0, duration = 0} = library.state;
+      finished = duration > 0 && timeOffset >= duration * 0.95;
     }
     const ordered = videos
       .filter((v) => (v.season ?? 0) > 0)
       .sort((a, b) => (a.season ?? 0) - (b.season ?? 0) || (a.episode ?? a.number ?? 0) - (b.episode ?? b.number ?? 0));
+    // A finished episode moves Play on to the next one (if it has come out).
+    if (best && finished && meta) {
+      const after = nextEpisode(meta, best);
+      const out = after && (!after.released || Date.parse(after.released) <= Date.now());
+      if (after && out) {
+        return after;
+      }
+    }
     return best || ordered[0] || videos[0] || null;
-  }, [isSeries, videos, state.resume, state.library, id]);
+  }, [isSeries, videos, state.resume, state.library, id, meta]);
 
   const activeSeason = season ?? nextUp?.season ?? (seasons.find((s) => s > 0) ?? seasons[0] ?? null);
   const episodes = useMemo(
@@ -191,6 +206,7 @@ export const Detail = ({state, type, id, preview, play, openStreams, onBack, ope
     );
   }
 
+  const upToIndex = episodes.findIndex((v) => v.id === nextUp?.id);
   const movieVideoId = meta.behaviorHints?.defaultVideoId || id;
   const target = isSeries ? nextUp : null;
   const localResume = state.resume[isSeries ? target?.id || '' : movieVideoId];
@@ -253,12 +269,16 @@ export const Detail = ({state, type, id, preview, play, openStreams, onBack, ope
             />
           </View>
           <FlatList
+            key={`season-${activeSeason}`}
             horizontal
             data={episodes}
             keyExtractor={(v) => v.id}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.episodeList}
             initialNumToRender={6}
+            // Opens at the episode you are up to (fixed card width, so no measuring).
+            getItemLayout={episodeLayout}
+            initialScrollIndex={upToIndex > 0 ? upToIndex : undefined}
             renderItem={({item}) => {
               const r = state.resume[item.id];
               return <EpisodeCard video={item} progress={r && r.duration ? r.position / r.duration : undefined} onPress={() => play(meta, item)} />;
@@ -285,6 +305,9 @@ export const Detail = ({state, type, id, preview, play, openStreams, onBack, ope
   );
 };
 
+const EPISODE_STEP = 400 + 22; // card width + right margin
+const episodeLayout = (_: unknown, index: number) => ({length: EPISODE_STEP, offset: EPISODE_STEP * index, index});
+
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: brand.background},
   fill: {width: '100%', height: '100%'},
@@ -308,6 +331,7 @@ const styles = StyleSheet.create({
   episodeArt: {width: '100%', height: 216, borderRadius: 6, overflow: 'hidden', backgroundColor: brand.surfaceRaised},
   episodeTitle: {color: brand.text, fontSize: type.small, fontWeight: '800', marginTop: 10},
   episodeText: {color: brand.textMuted, fontSize: type.tiny, lineHeight: 24, marginTop: 4},
+  watched: {position: 'absolute', right: 10, bottom: 10, color: brand.text, fontSize: type.tiny, fontWeight: '800', backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4, overflow: 'hidden'},
   progressTrack: {position: 'absolute', left: 10, right: 10, bottom: 8, height: 5, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 3},
   progressFill: {height: 5, backgroundColor: brand.accent, borderRadius: 3},
 });

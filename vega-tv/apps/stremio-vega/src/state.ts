@@ -50,9 +50,23 @@ export interface StremioState {
   /** Remembered subtitle language (e.g. "eng"), or null for subtitles off. */
   subtitleLanguage: string | null;
   setSubtitleLanguage: (lang: string | null) => void;
+  /** Subtitle text size in the player. */
+  subtitleSize: SubtitleSize;
+  setSubtitleSize: (size: SubtitleSize) => void;
+  /** Where the app opens: Home or Live TV. */
+  startTab: StartTab;
+  setStartTab: (tab: StartTab) => void;
 }
 
+export type StartTab = 'home' | 'tv';
+
+export type SubtitleSize = 'smaller' | 'standard' | 'larger';
+export const SUBTITLE_SIZES: SubtitleSize[] = ['smaller', 'standard', 'larger'];
+export const SUBTITLE_SCALE: Record<SubtitleSize, number> = {smaller: 0.8, standard: 1, larger: 1.25};
+
 const SUBTITLE_KEY = 'stremio.subtitle.v1';
+const SUBTITLE_SIZE_KEY = 'stremio.subtitle-size.v1';
+const START_TAB_KEY = 'stremio.start-tab.v1';
 
 export function useStremioState(): StremioState {
   const [ready, setReady] = useState(false);
@@ -68,6 +82,16 @@ export function useStremioState(): StremioState {
   const setSubtitleLanguage = useCallback((lang: string | null) => {
     setSubtitleLanguageState(lang);
     saveJson(SUBTITLE_KEY, lang);
+  }, []);
+  const [startTab, setStartTabState] = useState<StartTab>('home');
+  const setStartTab = useCallback((tab: StartTab) => {
+    setStartTabState(tab);
+    saveJson(START_TAB_KEY, tab);
+  }, []);
+  const [subtitleSize, setSubtitleSizeState] = useState<SubtitleSize>('standard');
+  const setSubtitleSize = useCallback((size: SubtitleSize) => {
+    setSubtitleSizeState(size);
+    saveJson(SUBTITLE_SIZE_KEY, size);
   }, []);
 
   const [rawAddons, setRawAddons] = useState<AddonDescriptor[]>([]);
@@ -99,6 +123,9 @@ export function useStremioState(): StremioState {
       setServerState(STICK_ONLY ? '' : await loadJson<string>(SERVER_KEY, ''));
       setResume(await loadJson<Record<string, ResumePoint>>(RESUME_KEY, {}));
       setSubtitleLanguageState(await loadJson<string | null>(SUBTITLE_KEY, null));
+      const size = await loadJson<SubtitleSize>(SUBTITLE_SIZE_KEY, 'standard');
+      setSubtitleSizeState(SUBTITLE_SIZES.includes(size) ? size : 'standard');
+      setStartTabState((await loadJson<StartTab>(START_TAB_KEY, 'home')) === 'tv' ? 'tv' : 'home');
       await loadAccountData(stored);
       setReady(true);
     })();
@@ -241,8 +268,8 @@ export function useStremioState(): StremioState {
   // One object while nothing in it changes: a new one each render made every screen that
   // receives it (the whole browse and TV guide) redraw on unrelated ticks (~0.8 s on the stick).
   return useMemo(
-    () => ({ready, session, addons, addonError, library, server, resume, signIn, signOut, refresh, setServer, saveProgress, toggleMyList, inMyList, removeFromContinueWatching, discovering, subtitleLanguage, setSubtitleLanguage}),
-    [ready, session, addons, addonError, library, server, resume, signIn, signOut, refresh, setServer, saveProgress, toggleMyList, inMyList, removeFromContinueWatching, discovering, subtitleLanguage, setSubtitleLanguage],
+    () => ({ready, session, addons, addonError, library, server, resume, signIn, signOut, refresh, setServer, saveProgress, toggleMyList, inMyList, removeFromContinueWatching, discovering, subtitleLanguage, setSubtitleLanguage, subtitleSize, setSubtitleSize, startTab, setStartTab}),
+    [ready, session, addons, addonError, library, server, resume, signIn, signOut, refresh, setServer, saveProgress, toggleMyList, inMyList, removeFromContinueWatching, discovering, subtitleLanguage, setSubtitleLanguage, subtitleSize, setSubtitleSize, startTab, setStartTab],
   );
 }
 

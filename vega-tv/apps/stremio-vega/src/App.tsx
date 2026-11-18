@@ -7,7 +7,7 @@ import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import {PlaySource, VideoScreen} from '../../../shared/src/player/VideoScreen';
 import {exitApp, useBackHandler, useRemoteKeys} from '../../../shared/src/tv/remote';
-import {useStremioState} from './state';
+import {SUBTITLE_SCALE, useStremioState} from './state';
 import {Browse, BrowseTab} from './screens/Browse';
 import {Categories, GenrePage} from './screens/Categories';
 import {Detail} from './screens/Detail';
@@ -50,6 +50,16 @@ export const App = () => {
   const tv = useTv();
   const [splashDone, setSplashDone] = useState(false);
   const [tab, setTab] = useState<BrowseTab>('home');
+  // Open on the screen chosen in Settings (once, when the saved settings are in).
+  const startApplied = useRef(false);
+  useEffect(() => {
+    if (state.ready && !startApplied.current) {
+      startApplied.current = true;
+      if (state.startTab === 'tv') {
+        setTab('tv');
+      }
+    }
+  }, [state.ready, state.startTab]);
   const [stack, setStack] = useState<Route[]>([{name: 'browse'}]);
   const route = stack[stack.length - 1];
   const browseAlive = useRef(true);
@@ -195,6 +205,7 @@ export const App = () => {
           nextLabel="Next Episode"
           preferredSubtitle={state.subtitleLanguage}
           onSubtitleChosen={state.setSubtitleLanguage}
+          subtitleScale={SUBTITLE_SCALE[state.subtitleSize]}
           onUseEngine={(position) => replaceTop({name: 'gap', next: {...route, source: {...route.source, engine: true, startAt: position}}})}
           onRouteSwitched={(fromUrl, position) => {
             // Remember that this host cannot seek directly, then reopen on the PC route at

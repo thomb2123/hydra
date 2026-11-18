@@ -7,10 +7,12 @@ import {useBackHandler} from '../../../../shared/src/tv/remote';
 import {requestJson} from '../../../../shared/src/net';
 import * as api from '../stremio/api';
 import {normaliseServerUrl} from '../stremio/streaming';
-import {STICK_ONLY, StremioState} from '../state';
+import {STICK_ONLY, StremioState, SUBTITLE_SIZES, SubtitleSize} from '../state';
 import {TvState} from '../tv/useTv';
 import {TvConnect} from './TvGuide';
 import {resetReliability} from '../tv/guide';
+
+const SIZE_LABEL: Record<SubtitleSize, string> = {smaller: 'Smaller', standard: 'Standard', larger: 'Larger'};
 
 const CODE_LIFETIME_MS = 5 * 60 * 1000;
 const POLL_MS = 3000;
@@ -77,6 +79,27 @@ export const Settings = ({state, tv, onBack}: {state: StremioState; tv: TvState;
           </View>
         </View>
       )}
+
+      <Text style={styles.heading}>Start-up</Text>
+      <View style={styles.row}>
+        <FocusButton
+          label={`Open on: ${state.startTab === 'tv' ? 'Live TV' : 'Home'}`}
+          subtitle="Press to change"
+          onPress={() => state.setStartTab(state.startTab === 'tv' ? 'home' : 'tv')}
+        />
+      </View>
+
+      <Text style={styles.heading}>Subtitles</Text>
+      <View style={styles.row}>
+        <FocusButton
+          label={`Size: ${SIZE_LABEL[state.subtitleSize]}`}
+          subtitle="Press to change"
+          onPress={() => state.setSubtitleSize(SUBTITLE_SIZES[(SUBTITLE_SIZES.indexOf(state.subtitleSize) + 1) % SUBTITLE_SIZES.length])}
+        />
+      </View>
+      <Text style={styles.muted}>
+        {state.subtitleLanguage ? `Subtitles turn on by themselves in the language you last chose (${state.subtitleLanguage}).` : 'Subtitles start off; choosing a language while watching makes it the default.'}
+      </Text>
 
       <Text style={styles.heading}>Live TV (FlixNest)</Text>
       {pairing ? (
