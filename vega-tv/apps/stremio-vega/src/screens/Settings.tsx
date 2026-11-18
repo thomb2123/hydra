@@ -89,6 +89,7 @@ export const Settings = ({state, tv, onBack}: {state: StremioState; tv: TvState;
           onPress={() => state.setStartTab(state.startTab === 'tv' ? 'home' : 'tv')}
         />
         <FocusButton label={`Menu sounds: ${state.menuSounds ? 'On' : 'Off'}`} subtitle="Press to change" onPress={() => state.setMenuSounds(!state.menuSounds)} />
+        <FocusButton label={`Start-up sound: ${state.introSound ? 'On' : 'Off'}`} subtitle="Press to change" onPress={() => state.setIntroSound(!state.introSound)} />
       </View>
 
       <Text style={styles.heading}>Subtitles</Text>

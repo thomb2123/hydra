@@ -173,3 +173,50 @@ export async function similarTitles(addons: AddonDescriptor[], meta: {id: string
   similarCache.set(key, items);
   return items;
 }
+
+// Category tiles: the backdrop of a genre's most popular film (or series), fetched three
+// at a time so opening the page does not fire twenty catalog requests at once.
+const coverCache = new Map<string, Promise<MetaPreview | null>>();
+const usedCovers = new Set<string>();
+let running = 0;
+const queue: (() => void)[] = [];
+function limited<T>(task: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const start = () => {
+      running++;
+      task()
+        .then(resolve, reject)
+        .finally(() => {
+          running--;
+          queue.shift()?.();
+        });
+    };
+    if (running < 3) {
+      start();
+    } else {
+      queue.push(start);
+    }
+  });
+}
+
+/** A title to show on a genre's tile (with artwork), or null. Cached for the session. */
+export function genreCover(addons: AddonDescriptor[], genre: string): Promise<MetaPreview | null> {
+  const key = genre.toLowerCase();
+  let hit = coverCache.get(key);
+  if (!hit) {
+    hit = limited(async () => {
+      for (const source of genreSources(addons)) {
+        const list = (await genreList(source, genre)).filter((m) => m.background || m.poster);
+        // Each genre gets its own picture (the same blockbuster tops several genre lists).
+        const pick = list.find((m) => !usedCovers.has(m.id)) || list[0];
+        if (pick) {
+          usedCovers.add(pick.id);
+          return pick;
+        }
+      }
+      return null;
+    }).catch(() => null);
+    coverCache.set(key, hit);
+  }
+  return hit;
+}

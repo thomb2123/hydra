@@ -12,6 +12,7 @@ import {MergedChannel} from './channels';
 import {ProgrammeTag, Scores, applyScores, fetchScores, programmeTag} from './scores';
 import {loadJson, saveJson} from '../../../../shared/src/storage';
 import {msSinceLastKey} from '../../../../shared/src/tv/remote';
+import {introFinished} from '../ui/introGate';
 
 const LAST_KEY = 'tv.last.v1';
 const FAVOURITES_KEY = 'tv.favourites.v1';
@@ -220,9 +221,10 @@ export function useTv(): TvState {
       setFavourites(await loadJson<string[]>(FAVOURITES_KEY, []));
       setRecent(await loadJson<string[]>(RECENT_KEY, []));
       const saved = await fx.loadAccess();
-      // The channel list is read after the home screen has had a moment to appear, in
+      // The channel list is read once the intro is over and the home screen has had a moment to appear, in
       // timed steps with breaks between (the log says which part of start-up is slow).
-      await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+      await introFinished;
+      await new Promise<void>((resolve) => setTimeout(resolve, 600));
       let t0 = Date.now();
       const cached = await loadCachedGuide();
       const loadMs = Date.now() - t0;

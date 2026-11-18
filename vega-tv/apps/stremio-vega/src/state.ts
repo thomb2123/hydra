@@ -4,6 +4,7 @@ import {loadJson, removeKey, saveJson} from '../../../shared/src/storage';
 import * as api from './stremio/api';
 import {usableAddons} from './stremio/addons';
 import {AddonDescriptor, LibraryItem, MetaPreview} from './stremio/types';
+import {INTRO_SOUND_KEY} from './ui/soundKeys';
 import {discoverServer} from './stremio/streaming';
 
 const SESSION_KEY = 'stremio.session.v1';
@@ -59,6 +60,9 @@ export interface StremioState {
   /** Clicks and chimes while moving around the menus. */
   menuSounds: boolean;
   setMenuSounds: (on: boolean) => void;
+  /** The sound with the launch intro. */
+  introSound: boolean;
+  setIntroSound: (on: boolean) => void;
 }
 
 export type StartTab = 'home' | 'tv';
@@ -86,6 +90,11 @@ export function useStremioState(): StremioState {
   const setSubtitleLanguage = useCallback((lang: string | null) => {
     setSubtitleLanguageState(lang);
     saveJson(SUBTITLE_KEY, lang);
+  }, []);
+  const [introSound, setIntroSoundState] = useState(true);
+  const setIntroSound = useCallback((on: boolean) => {
+    setIntroSoundState(on);
+    saveJson(INTRO_SOUND_KEY, on);
   }, []);
   const [menuSounds, setMenuSoundsState] = useState(true);
   const setMenuSounds = useCallback((on: boolean) => {
@@ -136,6 +145,7 @@ export function useStremioState(): StremioState {
       setSubtitleSizeState(SUBTITLE_SIZES.includes(size) ? size : 'standard');
       setStartTabState((await loadJson<StartTab>(START_TAB_KEY, 'home')) === 'tv' ? 'tv' : 'home');
       setMenuSoundsState((await loadJson<boolean>(MENU_SOUNDS_KEY, true)) !== false);
+      setIntroSoundState((await loadJson<boolean>(INTRO_SOUND_KEY, true)) !== false);
       await loadAccountData(stored);
       setReady(true);
     })();
@@ -278,8 +288,8 @@ export function useStremioState(): StremioState {
   // One object while nothing in it changes: a new one each render made every screen that
   // receives it (the whole browse and TV guide) redraw on unrelated ticks (~0.8 s on the stick).
   return useMemo(
-    () => ({ready, session, addons, addonError, library, server, resume, signIn, signOut, refresh, setServer, saveProgress, toggleMyList, inMyList, removeFromContinueWatching, discovering, subtitleLanguage, setSubtitleLanguage, subtitleSize, setSubtitleSize, startTab, setStartTab, menuSounds, setMenuSounds}),
-    [ready, session, addons, addonError, library, server, resume, signIn, signOut, refresh, setServer, saveProgress, toggleMyList, inMyList, removeFromContinueWatching, discovering, subtitleLanguage, setSubtitleLanguage, subtitleSize, setSubtitleSize, startTab, setStartTab, menuSounds, setMenuSounds],
+    () => ({ready, session, addons, addonError, library, server, resume, signIn, signOut, refresh, setServer, saveProgress, toggleMyList, inMyList, removeFromContinueWatching, discovering, subtitleLanguage, setSubtitleLanguage, subtitleSize, setSubtitleSize, startTab, setStartTab, menuSounds, setMenuSounds, introSound, setIntroSound}),
+    [ready, session, addons, addonError, library, server, resume, signIn, signOut, refresh, setServer, saveProgress, toggleMyList, inMyList, removeFromContinueWatching, discovering, subtitleLanguage, setSubtitleLanguage, subtitleSize, setSubtitleSize, startTab, setStartTab, menuSounds, setMenuSounds, introSound, setIntroSound],
   );
 }
 

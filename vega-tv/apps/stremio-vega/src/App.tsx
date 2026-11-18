@@ -18,6 +18,7 @@ import {Starting} from './screens/Starting';
 import {Streams} from './screens/Streams';
 import {brand} from './ui/brand';
 import {Transition} from './ui/motion';
+import {markIntroFinished} from './ui/introGate';
 import {playUiSound, setUiSoundsEnabled, setUiSoundsSuspended} from './ui/uiSound';
 import {perfScreen, startPerfMonitor, stopPerfMonitor} from './perf';
 import {RankedStream} from './stremio/streamPicker';
@@ -50,7 +51,10 @@ const log = (line: string) => console.log(`[stremio] ${line}`);
 // home screen itself is built when the intro ends (on black), so the intro runs alone.
 export const App = () => {
   const [splashDone, setSplashDone] = useState(false);
-  const finishSplash = useCallback(() => setSplashDone(true), []);
+  const finishSplash = useCallback(() => {
+    markIntroFinished();
+    setSplashDone(true);
+  }, []);
   return (
     <View style={styles.fill}>
       <AppBody introDone={splashDone} />
@@ -91,10 +95,12 @@ const AppBody = ({introDone}: {introDone: boolean}) => {
   useEffect(() => {
     perfScreen(route.name === 'browse' ? tab : route.name);
   }, [route.name, tab]);
-  // Menu sounds: after the intro, never over video (players released while it plays).
+  // Menu sounds: after the intro, never over video. Released as soon as a film starts
+  // loading (before its player exists), so they never compete with it for audio.
+  const quiet = playing || route.name === 'starting';
   useEffect(() => {
-    setUiSoundsSuspended(!introDone || playing);
-  }, [introDone, playing]);
+    setUiSoundsSuspended(!introDone || quiet);
+  }, [introDone, quiet]);
   useEffect(() => {
     setUiSoundsEnabled(state.menuSounds);
   }, [state.menuSounds]);

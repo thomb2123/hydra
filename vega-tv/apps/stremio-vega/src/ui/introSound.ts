@@ -3,6 +3,9 @@
 // video player. Any failure just means a silent intro.
 import {Image} from 'react-native';
 import {AudioContentType, AudioPlayer, AudioUsageType} from '@amazon-devices/react-native-w3cmedia';
+import {loadJson} from '../../../../shared/src/storage';
+
+import {INTRO_SOUND_KEY} from './soundKeys';
 
 const log = (line: string) => console.log(`[stremio] intro sound: ${line}`);
 
@@ -26,6 +29,9 @@ export function playIntroSound(maxWaitMs = 700): Promise<void> {
     (async () => {
       let player: AudioPlayer | null = null;
       try {
+        if ((await loadJson<boolean>(INTRO_SOUND_KEY, true)) === false) {
+          throw new Error('switched off in Settings');
+        }
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const uri = Image.resolveAssetSource(require('./sounds/intro.mp3'))?.uri;
         if (!uri) {
