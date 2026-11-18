@@ -74,6 +74,7 @@ export function useRemoteKeys(
     if (key && action === KEY_DOWN) {
       // Recorded even by a disabled handler, so every screen knows this press happened.
       keyDownAt[key] = Date.now();
+      lastKeyAt = keyDownAt[key];
     }
     if (!enabledRef.current || !key) {
       return;
@@ -93,6 +94,15 @@ export function useRemoteKeys(
 
 /** When each key was last pressed down (ms), app-wide. */
 const keyDownAt: Record<string, number> = {};
+let lastKeyAt = 0;
+
+/**
+ * Milliseconds since any remote key was pressed (needs one `useRemoteKeys` mounted,
+ * enabled or not). Background work waits while the viewer is pressing keys.
+ */
+export function msSinceLastKey(): number {
+  return lastKeyAt ? Date.now() - lastKeyAt : Infinity;
+}
 
 /**
  * Registers a Back handler. Return true from `onBack` to consume the press;

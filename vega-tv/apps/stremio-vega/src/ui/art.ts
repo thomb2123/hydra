@@ -26,3 +26,9 @@ export function logoOf(meta: MetaPreview): string | undefined {
 export function yearOf(meta: MetaPreview): string {
   return String(meta.releaseInfo || '').replace(/[–-]\s*$/, '').trim();
 }
+
+/** The IMDb rating when there is one ("N/A" and empty values are not shown). */
+export function ratingOf(meta: MetaPreview): string {
+  const r = Number(String(meta.imdbRating || '').trim());
+  return r > 0 && r <= 10 ? r.toFixed(1) : '';
+}

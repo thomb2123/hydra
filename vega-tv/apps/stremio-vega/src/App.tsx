@@ -6,7 +6,7 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import {PlaySource, VideoScreen} from '../../../shared/src/player/VideoScreen';
-import {exitApp, useBackHandler} from '../../../shared/src/tv/remote';
+import {exitApp, useBackHandler, useRemoteKeys} from '../../../shared/src/tv/remote';
 import {useStremioState} from './state';
 import {Browse, BrowseTab} from './screens/Browse';
 import {Categories, GenrePage} from './screens/Categories';
@@ -64,6 +64,8 @@ export const App = () => {
   useEffect(() => {
     perfScreen(route.name === 'browse' ? tab : route.name);
   }, [route.name, tab]);
+  // Notes every key press app-wide (handler off), so background work can wait for a still remote.
+  useRemoteKeys(noop, false);
   const push = useCallback((next: Route) => setStack((s) => [...s, next]), []);
   const pop = useCallback(() => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)), []);
   const replaceTop = useCallback((next: Route) => setStack((s) => [...s.slice(0, -1), next]), []);
@@ -316,3 +318,5 @@ const styles = StyleSheet.create({
   loading: {flex: 1, backgroundColor: brand.background, justifyContent: 'center', alignItems: 'center'},
   loadingMark: {color: brand.accent, fontSize: 160, fontWeight: '900'},
 });
+
+const noop = () => undefined;

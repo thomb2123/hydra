@@ -211,6 +211,13 @@ cloud workspace can't reach).
   - Stutter detector (`src/perf.ts`): logs `[stremio] perf: blocked N ms on <screen>` for any JS block over 120 ms, plus a per-minute summary, so smoothness can be measured from the device log.
   - "initialize failed: undefined" in the log was a player torn down mid-start while zapping; no longer logged or shown.
   - Channel re-check from the PC: BBC Three (720p) and Sky Sports Darts (1080p) now verified. The other 16 (Sky Replay 502; dream4k, strong_vault and streamsports99 sources refuse the PC with I/O errors / connection resets) remain unverified from the PC; Sky Cinema Premiere and TNT Sports 1 have played on the stick through dream4k.
+  - **Measured on the stick with the stutter detector (22:13–22:35):**
+    - Title page with 566 links: 1.1, 1.1 and 2.3 s freezes while links were ranked (every link re-read with ~35 patterns each time another add-on answered). Now each link is read once (`traitsOf` cache) and at most 200 per add-on are considered: worst 0.48 s.
+    - Live TV guide froze 0.7–0.8 s every 30 s with nobody pressing anything: `useStremioState` returned a new object every render, so the useTv clock tick redrew all of Browse/TvGuide. The state object is now memoised (as is `tv`): no stutters in 75 s idle.
+    - Live Now refresh: building events took ~1 s (broadcaster names re-parsed thousands of times; now cached, 0.2 s), score matching 0.36 s (name splitting cached, 0.21 s). Steps are timed in the log (`tv events steps`), yield to the UI in between, and the whole refresh waits until the remote has been still for 4 s (at most 60 s; `msSinceLastKey` in `shared/src/tv/remote.ts`). Still ~0.5 s for parsing the 1,000-event JSON itself.
+    - Home rows: 5 down / 6 right / 5 up fast, no stutter. Guide: 15 fast ▼, only 0.13–0.15 s blips.
+  - Checked on the TV: Back from Top 10 #2 returns to #2; title pages show "Resume from 9:09" and Start Over (Start Over not pressed: it would overwrite the account's resume point); the rebuilt player plays live TV (Main Event darts, matching the guide). The Odyssey is back in Continue Watching (account sync, nothing lost). Ratings of "N/A" are no longer shown ("★ N/A" on new films).
+  - Build note: `check_others.sh` used to rsync `shared/src` with `--delete` and no vendor exclude, wiping the Shaka build in the WSL clone (build failed "Unable to resolve ./vendor/polyfills"); fixed, and `scripts/build-shaka.sh` restores it.
   - Subtitle failures in the 17:00–18:00 log were the community mirror (opensubtitles.stremio.homes, still unreachable on 18 Nov 22:00); every film since the official-server rewrite loaded English subtitles.
 
 ## Open issues (in priority order)

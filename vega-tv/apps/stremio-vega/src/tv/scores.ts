@@ -54,7 +54,23 @@ const GENERIC = new Set([
 ]);
 const ALIAS: Record<string, string> = {utd: 'united', man: 'manchester', spurs: 'tottenham', wolves: 'wolverhampton', psg: 'paris'};
 
+// Matching compares each listing with every score of its sport, so the same names are
+// split thousands of times per refresh; results are remembered (callers do not modify them).
+const wordCache = new Map<string, string[]>();
 export function words(text: string): string[] {
+  const key = String(text || '');
+  let hit = wordCache.get(key);
+  if (!hit) {
+    hit = splitWords(key);
+    if (wordCache.size > 20000) {
+      wordCache.clear();
+    }
+    wordCache.set(key, hit);
+  }
+  return hit;
+}
+
+function splitWords(text: string): string[] {
   return String(text || '')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')

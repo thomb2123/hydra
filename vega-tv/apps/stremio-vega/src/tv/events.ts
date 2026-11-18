@@ -248,8 +248,40 @@ export function guideAgrees(event: Pick<SportEvent, 'title' | 'competition' | 's
   return sportish ? 'unknown' : 'other';
 }
 
+// The same few hundred broadcaster names repeat across a thousand listings; reading one
+// takes dozens of text replacements, which cost about a second per refresh on the stick.
+interface BroadcastInfo {
+  rawName: string;
+  parsed: ReturnType<typeof parseChannelName>;
+  curated: ReturnType<ReturnType<typeof channelIndex>['get']>;
+  sportyFeed: boolean;
+}
+const broadcastCache = new Map<string, BroadcastInfo>();
+let cachedIndex: ReturnType<typeof channelIndex> | null = null;
+function lineupIndex(): ReturnType<typeof channelIndex> {
+  return (cachedIndex = cachedIndex || channelIndex());
+}
+function broadcastInfo(name: string, index: ReturnType<typeof channelIndex>): BroadcastInfo {
+  let hit = broadcastCache.get(name);
+  if (!hit) {
+    const rawName = name.replace(/\s+·\s+[^·]+$/, '');
+    const parsed = parseChannelName(rawName);
+    hit = {
+      rawName,
+      parsed,
+      curated: index.get(`UK|${parsed.key}`) || index.get(`US|${parsed.key}`),
+      sportyFeed: UKUS_PREFIX.test(rawName) && SPORTY_FEED.test(rawName),
+    };
+    if (broadcastCache.size > 5000) {
+      broadcastCache.clear();
+    }
+    broadcastCache.set(name, hit);
+  }
+  return hit;
+}
+
 export function buildEvents(raw: any[], channels: MergedChannel[], horizonSec = 3 * 3600, now = Date.now() / 1000): SportEvent[] {
-  const index = channelIndex();
+  const index = lineupIndex();
   const merged = new Map(channels.map((c) => [c.id, c]));
   const out = new Map<string, SportEvent>();
   for (const item of raw || []) {
@@ -285,12 +317,10 @@ export function buildEvents(raw: any[], channels: MergedChannel[], horizonSec = 
     let channelId: string | undefined;
     const feeds: Source[] = [];
     for (const b of item.broadcasts || []) {
-      const rawName = String(b?.name || '').replace(/\s+·\s+[^·]+$/, '');
-      const parsed = parseChannelName(rawName);
-      const curated = index.get(`UK|${parsed.key}`) || index.get(`US|${parsed.key}`);
+      const {rawName, parsed, curated, sportyFeed} = broadcastInfo(String(b?.name || ''), index);
       if (curated && merged.has(curated.id) && SPORT_CATEGORIES.has(curated.category)) {
         channelId = channelId || curated.id;
-      } else if (UKUS_PREFIX.test(rawName) && SPORTY_FEED.test(rawName) && b?.id) {
+      } else if (sportyFeed && b?.id) {
         feeds.push({provider: String(b.id).split(':')[0], id: String(b.id), rawName, quality: parsed.quality, fps60: parsed.fps60, hevc: parsed.hevc, epgId: '', logo: ''});
       }
     }

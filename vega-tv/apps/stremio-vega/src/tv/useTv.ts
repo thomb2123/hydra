@@ -11,6 +11,7 @@ import {describe, officialNowNext} from './officialGuide';
 import {MergedChannel} from './channels';
 import {ProgrammeTag, Scores, applyScores, fetchScores, programmeTag} from './scores';
 import {loadJson, saveJson} from '../../../../shared/src/storage';
+import {msSinceLastKey} from '../../../../shared/src/tv/remote';
 
 const LAST_KEY = 'tv.last.v1';
 const FAVOURITES_KEY = 'tv.favourites.v1';
@@ -124,20 +125,37 @@ export function useTv(): TvState {
     }
     refreshingRef.current = true;
     try {
-      const raw = await fx.events(acc);
+      // Each step hands the thread back to the screen in between (timed for the log), so
+      // a refresh never freezes key presses for its whole length.
+      const took: string[] = [];
+      const step = async <T,>(name: string, work: () => T | Promise<T>): Promise<T> => {
+        await breathe();
+        const t0 = Date.now();
+        const out = await work();
+        took.push(`${name} ${Date.now() - t0}`);
+        return out;
+      };
+      // Reading the downloaded list freezes the stick for ~0.7 s, so it waits (up to 60 s)
+      // until the remote has been still for a few seconds.
+      await whenRemoteIdle();
+      const raw = await step('fetch', () => fx.events(acc));
       const items: any[] = raw.items || [];
-      const built = buildEvents(items, g.channels);
+      const built = await step('build', () => buildEvents(items, g.channels));
       // Listings call re-runs "live"; live scores say what is really in progress.
-      const scores = await fetchScores().catch(() => null);
+      const scores = await step('scores', () => fetchScores().catch(() => null));
       if (scores) {
         setScores(scores);
       }
-      const scored = applyScores(built, scores);
+      const scored = await step('apply', () => applyScores(built, scores));
       // (No background stream checks: each one opens a session on the IPTV account, and
       // the providers' connection limits then refuse films and channels the viewer opens.
       // The player itself fails over between sources when one will not start.)
-      const checked = await checkAgainstGuide(acc, scored, g);
-      const verified = (await findOnOfficialGuides(checked, g.channels)).map((e) => ({...e, streamOk: true}));
+      const checked = await step('guides', () => checkAgainstGuide(acc, scored, g));
+      const found = await step('official', () => findOnOfficialGuides(checked, g.channels));
+      const verified = found.map((e) => ({...e, streamOk: true}));
+      await breathe();
+      // eslint-disable-next-line no-console
+      console.log(`[stremio] tv events steps (ms, network included): ${took.join(', ')}`);
       fetchedAtRef.current = Date.now();
       setEvents(verified);
       const statuses = new Map<string, number>();
@@ -300,6 +318,15 @@ export function useTv(): TvState {
 
 const EVENTS_REFRESH_MS = 2 * 60 * 1000;
 const MIN_REFRESH_GAP_MS = 45 * 1000;
+/** Lets pending key presses and frames run before the next piece of background work. */
+const breathe = () => new Promise<void>((resolve) => setTimeout(resolve, 16));
+/** Resolves once no remote key has been pressed for 4 s (or after 60 s regardless). */
+async function whenRemoteIdle(quietMs = 4000, maxWaitMs = 60000): Promise<void> {
+  const until = Date.now() + maxWaitMs;
+  while (msSinceLastKey() < quietMs && Date.now() < until) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+  }
+}
 
 /**
  * Checks that what Live Now would show (and what joins it before the next refresh)

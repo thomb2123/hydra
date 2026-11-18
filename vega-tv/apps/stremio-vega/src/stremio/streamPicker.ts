@@ -287,15 +287,32 @@ export function scoreStream(traits: StreamTraits, options: PickerOptions): numbe
 }
 
 /** Ranks every stream from every add-on, best first. */
+// Reading a release name takes ~35 pattern checks; on the stick, re-reading hundreds of
+// names each time another add-on answers froze the title page for 1-2 s. Each stream
+// object is read once.
+const analysed = new WeakMap<Stream, {traits: StreamTraits; summary: string}>();
+function traitsOf(stream: Stream): {traits: StreamTraits; summary: string} {
+  let hit = analysed.get(stream);
+  if (!hit) {
+    const traits = analyseStream(stream);
+    hit = {traits, summary: summarise(traits)};
+    analysed.set(stream, hit);
+  }
+  return hit;
+}
+
+/** Add-ons list their best links first; links past this many per add-on are not considered. */
+export const MAX_STREAMS_PER_ADDON = 200;
+
 export function rankStreams(groups: {addonName: string; streams: Stream[]}[], options: PickerOptions): RankedStream[] {
   const ranked: (RankedStream & {order: number})[] = [];
   let order = 0;
   groups.forEach((group, groupIndex) => {
-    group.streams.forEach((stream) => {
-      const traits = analyseStream(stream);
+    group.streams.slice(0, MAX_STREAMS_PER_ADDON).forEach((stream) => {
+      const {traits, summary} = traitsOf(stream);
       // Small tie-breaker that keeps the user's add-on order.
       const score = scoreStream(traits, options) - groupIndex * 2;
-      ranked.push({stream, addonName: group.addonName, traits, score, summary: summarise(traits), playable: score > -1000, order: order++});
+      ranked.push({stream, addonName: group.addonName, traits, score, summary, playable: score > -1000, order: order++});
     });
   });
   ranked.sort((a, b) => b.score - a.score || a.order - b.order);

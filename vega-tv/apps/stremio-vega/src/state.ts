@@ -238,7 +238,12 @@ export function useStremioState(): StremioState {
     [library, putItem],
   );
 
-  return {ready, session, addons, addonError, library, server, resume, signIn, signOut, refresh, setServer, saveProgress, toggleMyList, inMyList, removeFromContinueWatching, discovering, subtitleLanguage, setSubtitleLanguage};
+  // One object while nothing in it changes: a new one each render made every screen that
+  // receives it (the whole browse and TV guide) redraw on unrelated ticks (~0.8 s on the stick).
+  return useMemo(
+    () => ({ready, session, addons, addonError, library, server, resume, signIn, signOut, refresh, setServer, saveProgress, toggleMyList, inMyList, removeFromContinueWatching, discovering, subtitleLanguage, setSubtitleLanguage}),
+    [ready, session, addons, addonError, library, server, resume, signIn, signOut, refresh, setServer, saveProgress, toggleMyList, inMyList, removeFromContinueWatching, discovering, subtitleLanguage, setSubtitleLanguage],
+  );
 }
 
 export function continueWatching(library: LibraryItem[]): LibraryItem[] {

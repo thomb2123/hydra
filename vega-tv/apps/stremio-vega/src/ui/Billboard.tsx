@@ -2,7 +2,7 @@
 // its logo (or name), year, rating, genres and a short synopsis.
 import React, {memo, useState} from 'react';
 import {Image, StyleSheet, Text, View} from 'react-native';
-import {backdropOf, logoOf, yearOf} from './art';
+import {backdropOf, logoOf, ratingOf, yearOf} from './art';
 import {brand, edge, type} from './brand';
 import {MetaPreview} from '../stremio/types';
 import {FeaturedStore, useFeatured} from './featured';
@@ -43,7 +43,7 @@ export const Billboard = ({meta, height = BILLBOARD_H}: {meta: MetaPreview | nul
   }
   const logo = logoOf(meta);
   const showLogo = logo && logoFailed !== logo;
-  const facts = [yearOf(meta), meta.imdbRating ? `★ ${meta.imdbRating}` : '', ((meta as any).genres || []).slice(0, 3).join(' • ')].filter(Boolean);
+  const facts = [yearOf(meta), ratingOf(meta) ? `★ ${ratingOf(meta)}` : '', ((meta as any).genres || []).slice(0, 3).join(' • ')].filter(Boolean);
   return (
     <View style={[styles.root, {height}]}>
       {/* Medium-size art: decodes much faster on the stick than full-HD backdrops. */}

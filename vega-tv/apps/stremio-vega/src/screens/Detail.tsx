@@ -5,7 +5,7 @@ import {FlatList, Image, StyleSheet, Text, TouchableOpacity, View} from 'react-n
 import {useBackHandler} from '../../../../shared/src/tv/remote';
 import {Fade} from '../ui/Billboard';
 import {NavTab, Pill} from '../ui/Cards';
-import {backdropOf, logoOf, yearOf} from '../ui/art';
+import {backdropOf, logoOf, ratingOf, yearOf} from '../ui/art';
 import {brand, edge, type} from '../ui/brand';
 import {fetchMeta} from '../stremio/addons';
 import {prefetchPick} from '../stremio/autoPick';
@@ -187,7 +187,7 @@ export const Detail = ({state, type, id, preview, play, openStreams, onBack}: De
     : resuming
     ? `Resume${resumeFrom}`
     : 'Play';
-  const facts = [yearOf(meta) || meta.year, meta.runtime, meta.imdbRating ? `★ ${meta.imdbRating}` : '', isSeries && seasons.filter((s) => s > 0).length ? `${seasons.filter((s) => s > 0).length} Seasons` : '']
+  const facts = [yearOf(meta) || meta.year, meta.runtime, ratingOf(meta) ? `★ ${ratingOf(meta)}` : '', isSeries && seasons.filter((s) => s > 0).length ? `${seasons.filter((s) => s > 0).length} Seasons` : '']
     .filter(Boolean)
     .join('   ');
   const logo = logoOf(meta);
