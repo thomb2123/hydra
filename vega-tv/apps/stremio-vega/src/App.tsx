@@ -18,6 +18,7 @@ import {Starting} from './screens/Starting';
 import {Streams} from './screens/Streams';
 import {brand} from './ui/brand';
 import {FadeIn} from './ui/FadeIn';
+import {perfScreen, startPerfMonitor, stopPerfMonitor} from './perf';
 import {RankedStream} from './stremio/streamPicker';
 import {nextEpisode} from './stremio/playback';
 import {forgetPick, noteFailure} from './stremio/autoPick';
@@ -56,6 +57,13 @@ export const App = () => {
   useEffect(() => {
     setTvBackgroundPaused(playing);
   }, [playing]);
+  useEffect(() => {
+    startPerfMonitor();
+    return stopPerfMonitor;
+  }, []);
+  useEffect(() => {
+    perfScreen(route.name === 'browse' ? tab : route.name);
+  }, [route.name, tab]);
   const push = useCallback((next: Route) => setStack((s) => [...s, next]), []);
   const pop = useCallback(() => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)), []);
   const replaceTop = useCallback((next: Route) => setStack((s) => [...s.slice(0, -1), next]), []);

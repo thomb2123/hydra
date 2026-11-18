@@ -156,11 +156,29 @@ export function nowTag(info: NowNext | null | undefined, sportChannel: boolean, 
 export function cachedNowNext(channel: MergedChannel, compare = false): NowNext | null {
   for (const key of compare ? [`${channel.id}|full`] : [`${channel.id}|full`, `${channel.id}|basic`]) {
     const hit = cache.get(key);
-    if (hit && Date.now() - hit.at < TTL_MS) {
+    if (hit && Date.now() - hit.at < TTL_MS && !ended(hit.value)) {
       return hit.value;
     }
   }
   return null;
+}
+
+/** The listing's "now" programme has finished (its next one should be on). */
+function ended(info: NowNext): boolean {
+  const end = info.now?.end;
+  return !!end && end * 1000 <= Date.now();
+}
+
+/**
+ * How long a listing stays right: until its programme ends (plus a moment for the
+ * guides to roll over), at most 10 minutes; a short wait when nothing is listed yet.
+ */
+export function msUntilChange(info: NowNext | null | undefined, nowMs = Date.now()): number {
+  const end = info?.now?.end;
+  if (!end) {
+    return info?.now ? 10 * 60 * 1000 : 3 * 60 * 1000;
+  }
+  return Math.max(15 * 1000, Math.min(10 * 60 * 1000, end * 1000 - nowMs + 20 * 1000));
 }
 
 /**

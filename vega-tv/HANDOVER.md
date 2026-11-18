@@ -205,6 +205,14 @@ cloud workspace can't reach).
 
 - **Polish (18 Nov, late):** guide rows read only the official listing (one cached request); the streams' own labels are compared only for the channel rested on (0.6 s) and in the player's Sources, so scrolling makes ~4x fewer network calls (checked: 10 fast ▼ = 10 channels, listings already shown). Back from a title page returns focus to the card that opened it (`Browse` remembers row + title; checked on Continue Watching). Title pages show "Resume from 6:00" and a Start Over button (not yet tried on the TV).
 
+- **Smoother / more accurate (18 Nov, night):**
+  - Guide rows and the player's banner move on to the next programme by themselves when the one on now ends (`msUntilChange` in `tv/epg.ts`; a cached listing whose programme has ended is not served). Before, a row kept the finished programme until the guide was reopened.
+  - Live Now refreshed (1,000 events + scores + guide checks) twice every time a channel or film was left (re-ranking restarted its timer, and the return from playback refreshed again); the stick log showed refreshes every 10–15 s while zapping. Now at most one every 45 s, never two at once, and re-ranking no longer restarts it. The 30 s clock tick keeps the same Live Now list and the same `tv` object when nothing changed, so screens are not redrawn by it.
+  - Stutter detector (`src/perf.ts`): logs `[stremio] perf: blocked N ms on <screen>` for any JS block over 120 ms, plus a per-minute summary, so smoothness can be measured from the device log.
+  - "initialize failed: undefined" in the log was a player torn down mid-start while zapping; no longer logged or shown.
+  - Channel re-check from the PC: BBC Three (720p) and Sky Sports Darts (1080p) now verified. The other 16 (Sky Replay 502; dream4k, strong_vault and streamsports99 sources refuse the PC with I/O errors / connection resets) remain unverified from the PC; Sky Cinema Premiere and TNT Sports 1 have played on the stick through dream4k.
+  - Subtitle failures in the 17:00–18:00 log were the community mirror (opensubtitles.stremio.homes, still unreachable on 18 Nov 22:00); every film since the official-server rewrite loaded English subtitles.
+
 ## Open issues (in priority order)
 
 1. **About 5 minutes into a film, playback stalled** (engine only; films now play in the

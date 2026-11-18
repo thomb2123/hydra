@@ -10,7 +10,7 @@ import {Pill} from '../ui/Cards';
 import {brand, edge, type} from '../ui/brand';
 import {CATEGORIES} from '../tv/lineup';
 import {MergedChannel} from '../tv/channels';
-import {NowNext, cachedNowNext, cleanTitle, displayTitle, nowNext, nowTag, progressOf, timeRange} from '../tv/epg';
+import {NowNext, cachedNowNext, cleanTitle, displayTitle, msUntilChange, nowNext, nowTag, progressOf, timeRange} from '../tv/epg';
 import {LIVE_NOW_ID, SportEvent} from '../tv/events';
 import {ProgrammeTag} from '../tv/scores';
 import {describe, guideLabel} from '../tv/officialGuide';
@@ -406,6 +406,22 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, favourit
     }
     return () => {
       alive = false;
+    };
+  }, [access, channel, info]);
+  // When the programme on now ends, the row moves on to the next one by itself.
+  useEffect(() => {
+    if (!info) {
+      return undefined;
+    }
+    let alive = true;
+    const timer = setTimeout(() => {
+      nowNext(access, channel)
+        .then((v) => alive && setInfo(v))
+        .catch(() => undefined);
+    }, msUntilChange(info));
+    return () => {
+      alive = false;
+      clearTimeout(timer);
     };
   }, [access, channel, info]);
   const now = info?.now;

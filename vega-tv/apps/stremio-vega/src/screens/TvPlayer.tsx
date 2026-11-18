@@ -12,7 +12,7 @@ import {Pill} from '../ui/Cards';
 import {brand, type} from '../ui/brand';
 import * as fx from '../tv/flixnest';
 import {MergedChannel, Source} from '../tv/channels';
-import {NowNext, displayTitle, nowNext} from '../tv/epg';
+import {NowNext, displayTitle, msUntilChange, nowNext} from '../tv/epg';
 import {describe as addDescription, guideLabel} from '../tv/officialGuide';
 import {recordResult} from '../tv/guide';
 import {probeStream} from '../tv/probe';
@@ -143,21 +143,42 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
     setNote(null);
     if (channel && !feeds) {
       onChannel?.(channel);
-      nowNext(access, channel, true)
+      loadInfo(channel);
+    }
+    tune(new Set());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index]);
+
+  // Listing for the channel on screen (a late answer for a channel already left is dropped).
+  const infoFor = useRef<string | null>(null);
+  const loadInfo = useCallback(
+    (ch: MergedChannel) => {
+      infoFor.current = ch.id;
+      nowNext(access, ch, true)
         .then(async (v) => {
+          if (infoFor.current !== ch.id) {
+            return;
+          }
           setInfo(v);
           if (v.now?.programId && !v.now.description) {
             const now = await addDescription(v.now);
-            if (now?.description) {
+            if (now?.description && infoFor.current === ch.id) {
               setInfo((cur) => (cur === v ? {...v, now} : cur));
             }
           }
         })
         .catch(() => undefined);
+    },
+    [access],
+  );
+  // Watching for a while: when the programme ends, the banner moves on to the next one.
+  useEffect(() => {
+    if (!info || !channel || feeds) {
+      return undefined;
     }
-    tune(new Set());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index]);
+    const timer = setTimeout(() => loadInfo(channel), msUntilChange(info));
+    return () => clearTimeout(timer);
+  }, [info, channel, feeds, loadInfo]);
 
   const onFailed = useCallback(
     (reason: string) => {

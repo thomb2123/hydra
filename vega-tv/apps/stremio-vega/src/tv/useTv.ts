@@ -107,8 +107,14 @@ export function useTv(): TvState {
     }
   }, []);
 
+  const refreshingRef = useRef(false);
   const refreshEvents = useCallback(async () => {
-    if (backgroundPaused) {
+    if (backgroundPaused || refreshingRef.current) {
+      return;
+    }
+    // A refresh is heavy for the stick (about 1,000 listings, scores and guide checks):
+    // leaving a channel or a film must not set one off when the list is still fresh.
+    if (Date.now() - fetchedAtRef.current < MIN_REFRESH_GAP_MS) {
       return;
     }
     const acc = access;
@@ -116,6 +122,7 @@ export function useTv(): TvState {
     if (!acc || !g) {
       return;
     }
+    refreshingRef.current = true;
     try {
       const raw = await fx.events(acc);
       const items: any[] = raw.items || [];
@@ -152,6 +159,8 @@ export function useTv(): TvState {
           refreshRef.current();
         }, 20 * 1000);
       }
+    } finally {
+      refreshingRef.current = false;
     }
   }, [access]);
   const refreshRef = useRef(refreshEvents);
@@ -173,13 +182,18 @@ export function useTv(): TvState {
     }, 30 * 1000);
     return () => clearInterval(timer);
   }, []);
+  const lastLive = useRef<SportEvent[]>([]);
   const liveEvents = useMemo(() => {
     // A list that could not be refreshed for a while is not trusted at all.
-    if (!fetchedAtRef.current || clock - fetchedAtRef.current > STALE_EVENTS_MS) {
-      return [];
-    }
     // Only what was checked as really streaming; the next refresh (≤ 2 min) checks newcomers.
-    return liveNow(events, clock / 1000).filter((e) => e.streamOk);
+    const next = !fetchedAtRef.current || clock - fetchedAtRef.current > STALE_EVENTS_MS ? [] : liveNow(events, clock / 1000).filter((e) => e.streamOk);
+    // The same list as before keeps its identity, so the clock tick does not redraw the guide.
+    const prev = lastLive.current;
+    if (next.length === prev.length && next.every((e, i) => e === prev[i])) {
+      return prev;
+    }
+    lastLive.current = next;
+    return next;
   }, [events, clock]);
 
   useEffect(() => {
@@ -200,8 +214,11 @@ export function useTv(): TvState {
     })();
   }, [rebuildWith]);
 
+  // Runs once the guide exists; a re-ranked guide (after every channel watched) does not
+  // restart it (the next refresh reads the latest guide).
+  const hasGuide = !!guide;
   useEffect(() => {
-    if (!access || !guide) {
+    if (!access || !hasGuide) {
       return undefined;
     }
     refreshEvents();
@@ -216,7 +233,7 @@ export function useTv(): TvState {
       clearInterval(timer);
       sub?.remove?.();
     };
-  }, [access, guide, refreshEvents]);
+  }, [access, hasGuide, refreshEvents]);
 
   const connect = useCallback(
     async (next: fx.Access) => {
@@ -274,10 +291,15 @@ export function useTv(): TvState {
   }, []);
 
   const tagProgramme = useCallback((title: string) => programmeTag(title, scores), [scores]);
-  return {ready, access, guide, building, error, events: liveEvents, last, setLast, favourites, toggleFavourite, recent, connect, disconnect, rebuild, refreshRanking, refreshEvents, programmeTag: tagProgramme};
+  // One object while nothing in it changes, so screens given `tv` are not redrawn by clock ticks.
+  return useMemo(
+    () => ({ready, access, guide, building, error, events: liveEvents, last, setLast, favourites, toggleFavourite, recent, connect, disconnect, rebuild, refreshRanking, refreshEvents, programmeTag: tagProgramme}),
+    [ready, access, guide, building, error, liveEvents, last, setLast, favourites, toggleFavourite, recent, connect, disconnect, rebuild, refreshRanking, refreshEvents, tagProgramme],
+  );
 }
 
 const EVENTS_REFRESH_MS = 2 * 60 * 1000;
+const MIN_REFRESH_GAP_MS = 45 * 1000;
 
 /**
  * Checks that what Live Now would show (and what joins it before the next refresh)

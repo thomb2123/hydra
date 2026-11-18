@@ -982,6 +982,10 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
         load();
       })
       .catch((e: any) => {
+        // Zapping past a channel tears its player down mid-start; that is not a failure.
+        if (disposed) {
+          return;
+        }
         log(`initialize failed: ${e?.message || e}`);
         setError('The video player could not start.');
       });

@@ -426,3 +426,21 @@ describe('channel audit fixes', () => {
     expect(listingNamesFixture('UFC 320', 'UFC 320 Prelims')).toBe(false);
   });
 });
+
+import {msUntilChange} from '../src/tv/epg';
+
+describe('listings move on when the programme ends', () => {
+  const t0 = 1_800_000_000_000;
+  test('refreshes just after the programme on now ends', () => {
+    const info = {now: {title: 'A', start: t0 / 1000 - 600, end: t0 / 1000 + 120}, outliers: []} as any;
+    expect(msUntilChange(info, t0)).toBe(140 * 1000);
+  });
+  test('never waits more than 10 minutes, nor less than 15 seconds', () => {
+    expect(msUntilChange({now: {title: 'A', start: 0, end: t0 / 1000 + 7200}, outliers: []} as any, t0)).toBe(600 * 1000);
+    expect(msUntilChange({now: {title: 'A', start: 0, end: t0 / 1000 - 60}, outliers: []} as any, t0)).toBe(15 * 1000);
+  });
+  test('no listing yet: tries again in 3 minutes', () => {
+    expect(msUntilChange({now: null, outliers: []} as any, t0)).toBe(180 * 1000);
+    expect(msUntilChange(null, t0)).toBe(180 * 1000);
+  });
+});
