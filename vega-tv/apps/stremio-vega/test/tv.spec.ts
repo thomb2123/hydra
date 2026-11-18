@@ -444,3 +444,33 @@ describe('listings move on when the programme ends', () => {
     expect(msUntilChange(null, t0)).toBe(180 * 1000);
   });
 });
+
+import {matchChannels, matchEvents} from '../src/tv/searchMatch';
+
+describe('search finds live TV', () => {
+  const ch = (id: string, name: string, number: number, category = 'uk-sport') => ({id, name, number, category, keys: [], country: 'UK', sources: [], logo: '', badge: ''}) as any;
+  const channels = [
+    ch('uk-ss-main', 'Sky Sports Main Event', 401),
+    ch('uk-ss-pl', 'Sky Sports Premier League', 402),
+    ch('uk-ss-f1', 'Sky Sports F1', 404),
+    ch('uk-skyatl', 'Sky Atlantic', 122, 'uk-drama'),
+    ch('uk-bbc1', 'BBC One', 101, 'uk-ent'),
+  ];
+  test('every typed word must start a word of the name', () => {
+    expect(matchChannels(channels, 'sky sports').map((c) => c.number)).toEqual([401, 402, 404]);
+    expect(matchChannels(channels, 'sky f1').map((c) => c.number)).toEqual([404]);
+    expect(matchChannels(channels, 'ports')).toEqual([]);
+  });
+  test('a channel number finds that channel', () => {
+    expect(matchChannels(channels, '101').map((c) => c.name)).toEqual(['BBC One']);
+  });
+  test('too short to search', () => {
+    expect(matchChannels(channels, 's')).toEqual([]);
+  });
+  test('a team name finds its live match', () => {
+    const events = [{key: 'a', title: 'Arsenal v Chelsea', competition: 'Premier League', sport: 'Football'}, {key: 'b', title: 'Littler v Price', competition: 'Grand Slam of Darts', sport: 'Darts'}] as any;
+    expect(matchEvents(events, 'arsenal').map((e: any) => e.key)).toEqual(['a']);
+    expect(matchEvents(events, 'darts').map((e: any) => e.key)).toEqual(['b']);
+    expect(matchEvents(events, 'ar')).toEqual([]);
+  });
+});

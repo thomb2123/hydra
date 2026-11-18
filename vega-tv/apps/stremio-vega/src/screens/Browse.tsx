@@ -6,9 +6,11 @@ import {BILLBOARD_H, LiveBillboard} from '../ui/Billboard';
 import {createFeaturedStore} from '../ui/featured';
 import {LandscapeCard, NavTab, PosterCard} from '../ui/Cards';
 import {ContentRow} from '../ui/ContentRow';
+import {LiveSportRow} from '../ui/LiveSportRow';
 import {brand, edge, type} from '../ui/brand';
 import {RowSpec, Tab, rowsForTab} from '../stremio/rows';
 import {recommendationRows} from '../stremio/recommend';
+import {fetchMeta} from '../stremio/addons';
 import {LibraryItem, MetaPreview} from '../stremio/types';
 import {StremioState, continueWatching} from '../state';
 import {TvGuide} from './TvGuide';
@@ -41,6 +43,10 @@ const TABS: {key: BrowseTab; label: string}[] = [
   {key: 'new', label: 'New & Popular'},
   {key: 'mylist', label: 'My List'},
 ];
+
+// Continue Watching and My List entries carry only a name and poster; the billboard
+// fills in artwork, year, rating and synopsis from the title's details (once each).
+const fullPreview = new Map<string, MetaPreview | null>();
 
 function libraryPreview(item: LibraryItem): MetaPreview {
   return {id: item._id, type: item.type, name: item.name, poster: item.poster || undefined};
@@ -110,6 +116,8 @@ export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories
   // The card last focused: back from a title page, focus returns to it (the platform
   // does not restore focus inside a screen that was hidden).
   const lastFocus = useRef<{row: string; id: string} | null>(null);
+  const addonsRef = useRef(state.addons);
+  addonsRef.current = state.addons;
   const [restore, setRestore] = useState<{row: string; id: string} | null>(null);
   const wasActive = useRef(active);
   useEffect(() => {
@@ -131,7 +139,23 @@ export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories
       if (focusTimer.current) {
         clearTimeout(focusTimer.current);
       }
-      focusTimer.current = setTimeout(() => featured.set(meta), 350);
+      focusTimer.current = setTimeout(() => {
+        const known = fullPreview.get(meta.id);
+        featured.set(known || meta);
+        if (meta.description || known !== undefined) {
+          return;
+        }
+        fetchMeta(addonsRef.current, meta.type || 'movie', meta.id)
+          .then((full) => {
+            const merged = full ? {...meta, ...full, id: meta.id, type: meta.type || full.type} : null;
+            fullPreview.set(meta.id, merged);
+            // Still the title in focus: show the details.
+            if (merged && lastFocus.current?.id === meta.id) {
+              featured.set(merged);
+            }
+          })
+          .catch(() => fullPreview.set(meta.id, null));
+      }, 350);
     },
     [featured],
   );
@@ -144,6 +168,9 @@ export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories
     [featured],
   );
   const open = useCallback((meta: MetaPreview, type: string) => openMeta(type, meta.id, meta), [openMeta]);
+  const onFocusEvent = useCallback((e: SportEvent) => {
+    lastFocus.current = {row: 'live', id: e.key};
+  }, []);
   const hasResume = resume.length > 0;
   const renderRow = useCallback(
     ({item, index}: {item: RowSpec; index: number}) => (
@@ -196,7 +223,11 @@ export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories
     );
   }
 
-  const header =
+  const sportRow =
+    tab === 'home' ? (
+      <LiveSportRow events={tv.events} onPlay={playEvent} focusKey={restore && restore.row === 'live' ? restore.id : undefined} onFocusEvent={onFocusEvent} />
+    ) : null;
+  const resumeRow =
     resume.length > 0 ? (
       <View style={styles.resumeRow}>
         <Text style={styles.rowTitle}>Continue Watching</Text>
@@ -217,6 +248,13 @@ export const Browse = ({state, tab, setTab, openMeta, openSearch, openCategories
           )}
         />
       </View>
+    ) : null;
+  const header =
+    resumeRow || sportRow ? (
+      <>
+        {resumeRow}
+        {sportRow}
+      </>
     ) : null;
 
   return (

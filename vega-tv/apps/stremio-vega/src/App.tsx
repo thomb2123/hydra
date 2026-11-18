@@ -129,6 +129,7 @@ export const App = () => {
           onBack={pop}
           play={(meta, video, fromStart) => push({name: 'starting', meta, video, fromStart})}
           openStreams={(meta, video) => push({name: 'streams', meta, video})}
+          openMeta={openMeta}
         />
       );
     case 'starting':
@@ -208,7 +209,18 @@ export const App = () => {
       );
     }
     case 'search':
-      return <Search state={state} openMeta={openMeta} openGenre={openGenre} onBack={pop} />;
+      return (
+        <Search
+          state={state}
+          openMeta={openMeta}
+          openGenre={openGenre}
+          onBack={pop}
+          channels={tv.guide?.channels}
+          events={tv.events}
+          playChannel={playChannel}
+          playEvent={playEvent}
+        />
+      );
     case 'categories':
       return <Categories state={state} onBack={pop} openGenre={openGenre} />;
     case 'genre':

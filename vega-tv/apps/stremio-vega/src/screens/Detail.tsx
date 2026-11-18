@@ -4,12 +4,13 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {FlatList, Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {useBackHandler} from '../../../../shared/src/tv/remote';
 import {Fade} from '../ui/Billboard';
-import {NavTab, Pill} from '../ui/Cards';
+import {LandscapeCard, NavTab, Pill} from '../ui/Cards';
 import {backdropOf, logoOf, ratingOf, yearOf} from '../ui/art';
 import {brand, edge, type} from '../ui/brand';
 import {fetchMeta} from '../stremio/addons';
 import {prefetchPick} from '../stremio/autoPick';
 import {subtitleList, videoIdOf} from '../stremio/playback';
+import {similarTitles} from '../stremio/recommend';
 import {MetaDetail, MetaPreview, Video} from '../stremio/types';
 import {StremioState} from '../state';
 
@@ -25,6 +26,8 @@ export interface DetailProps {
   play: (meta: MetaDetail, video: Video | null, fromStart?: boolean) => void;
   openStreams: (meta: MetaDetail, video: Video | null) => void;
   onBack: () => void;
+  /** Opens another title (More Like This). */
+  openMeta?: (type: string, id: string, preview?: MetaPreview) => void;
 }
 
 const EpisodeCard = ({video, progress, onPress, preferred}: {video: Video; progress?: number; onPress: () => void; preferred?: boolean}) => {
@@ -68,7 +71,7 @@ function clockOf(seconds: number): string {
   return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
 }
 
-export const Detail = ({state, type, id, preview, play, openStreams, onBack}: DetailProps) => {
+export const Detail = ({state, type, id, preview, play, openStreams, onBack, openMeta}: DetailProps) => {
   const [meta, setMeta] = useState<MetaDetail | null>(preview ? ({...preview} as MetaDetail) : null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -161,6 +164,24 @@ export const Detail = ({state, type, id, preview, play, openStreams, onBack}: De
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta?.id, loading, prefetchVideo?.id]);
 
+  // More Like This (films; a series page uses that space for its episodes), once the
+  // full details (with genres) are in.
+  const [similar, setSimilar] = useState<MetaPreview[]>([]);
+  const wantsSimilar = !!openMeta && !loading && !!meta && !isSeries && type === 'movie';
+  useEffect(() => {
+    if (!wantsSimilar || !meta) {
+      return undefined;
+    }
+    let alive = true;
+    similarTitles(state.addons, {id: meta.id, type: 'movie', genres: meta.genres})
+      .then((items) => alive && setSimilar(items))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantsSimilar, meta?.id]);
+
   if (!meta) {
     return (
       <View style={styles.root}>
@@ -212,7 +233,7 @@ export const Detail = ({state, type, id, preview, play, openStreams, onBack}: De
         </Text>
         <View style={styles.actions}>
           <Pill label={`▶  ${playLabel}`} primary hasTVPreferredFocus onPress={() => play(meta, target)} />
-          {resuming ? <Pill label="↺  Start Over" onPress={() => play(meta, target, true)} /> : null}
+          {resuming ? <Pill label="Start Over" onPress={() => play(meta, target, true)} /> : null}
           {state.session ? (
             <Pill label={state.inMyList(meta.id) ? '✓  My List' : '+  My List'} onPress={() => state.toggleMyList({id: meta.id, type: meta.type || type, name: meta.name, poster: meta.poster})} />
           ) : null}
@@ -245,6 +266,21 @@ export const Detail = ({state, type, id, preview, play, openStreams, onBack}: De
           />
         </View>
       ) : null}
+      {!isSeries && similar.length ? (
+        <View style={styles.similarBox}>
+          <Text style={styles.similarTitle}>More Like This</Text>
+          <FlatList
+            horizontal
+            data={similar}
+            keyExtractor={(m) => m.id}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.episodeList}
+            initialNumToRender={5}
+            windowSize={3}
+            renderItem={({item}) => <LandscapeCard meta={item} onPress={() => openMeta?.(item.type || 'movie', item.id, item)} />}
+          />
+        </View>
+      ) : null}
     </View>
   );
 };
@@ -263,6 +299,8 @@ const styles = StyleSheet.create({
   synopsis: {color: brand.textSoft, fontSize: type.body, lineHeight: 34, marginBottom: 26},
   actions: {flexDirection: 'row'},
   seriesBox: {position: 'absolute', left: 0, right: 0, bottom: 30, height: 430},
+  similarBox: {position: 'absolute', left: 0, right: 0, bottom: 10, height: 310},
+  similarTitle: {color: brand.text, fontSize: type.heading - 4, fontWeight: '800', marginLeft: edge, marginBottom: 4},
   seasonTabs: {marginLeft: edge - 18, marginBottom: 8, height: 60},
   episodeList: {paddingHorizontal: edge, paddingVertical: 10},
   episode: {width: 400, marginRight: 22, borderRadius: 8, borderWidth: 4, borderColor: 'transparent', padding: 4},

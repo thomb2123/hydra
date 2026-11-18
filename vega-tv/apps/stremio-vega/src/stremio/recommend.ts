@@ -147,3 +147,29 @@ export async function recommendationRows(addons: AddonDescriptor[], library: Lib
   }
   return rows;
 }
+
+const similarCache = new Map<string, MetaPreview[]>();
+
+/**
+ * "More Like This" for a title page: popular titles of the same type from the title's
+ * genre lists; titles sharing more of its genres (and better rated) come first.
+ */
+export async function similarTitles(addons: AddonDescriptor[], meta: {id: string; type?: string; genres?: string[]}, max = 16): Promise<MetaPreview[]> {
+  const type = meta.type === 'series' ? 'series' : 'movie';
+  const key = `${type}|${meta.id}`;
+  const hit = similarCache.get(key);
+  if (hit) {
+    return hit;
+  }
+  const source = genreSources(addons).find((s) => s.type === type);
+  const genres = (meta.genres || []).slice(0, 3);
+  if (!source || !genres.length) {
+    return [];
+  }
+  const lists = await Promise.all(genres.map(async (genre, i) => ({weight: 1 - i * 0.2, metas: await genreList(source, genre)})));
+  const items = scoreCandidates(lists, new Set([meta.id]))
+    .filter((m) => m.poster || m.background)
+    .slice(0, max);
+  similarCache.set(key, items);
+  return items;
+}

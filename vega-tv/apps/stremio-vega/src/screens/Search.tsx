@@ -11,12 +11,20 @@ import {fetchCatalog, searchCatalogs} from '../stremio/addons';
 import {allGenres, rowsForTab} from '../stremio/rows';
 import {MetaPreview} from '../stremio/types';
 import {StremioState} from '../state';
+import {MergedChannel} from '../tv/channels';
+import {SportEvent} from '../tv/events';
+import {matchChannels, matchEvents} from '../tv/searchMatch';
 
 export interface SearchProps {
   state: StremioState;
   openMeta: (type: string, id: string, preview?: MetaPreview) => void;
   openGenre: (genre: string) => void;
   onBack: () => void;
+  /** Live TV channels and live sport, so "sky sports" or a team name finds them too. */
+  channels?: MergedChannel[];
+  events?: SportEvent[];
+  playChannel?: (channel: MergedChannel, list: MergedChannel[]) => void;
+  playEvent?: (event: SportEvent) => void;
 }
 
 const KEYS = 'abcdefghijklmnopqrstuvwxyz1234567890'.split('');
@@ -40,7 +48,7 @@ const Key = ({label, onPress, wide, preferred}: {label: string; onPress: () => v
 
 const resultCache = new Map<string, MetaPreview[]>();
 
-export const Search = ({state, openMeta, openGenre, onBack}: SearchProps) => {
+export const Search = ({state, openMeta, openGenre, onBack, channels = [], events = [], playChannel, playEvent}: SearchProps) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<MetaPreview[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -56,6 +64,8 @@ export const Search = ({state, openMeta, openGenre, onBack}: SearchProps) => {
   });
 
   const text = query.trim();
+  const channelMatches = useMemo(() => (playChannel ? matchChannels(channels, text) : []), [channels, text, playChannel]);
+  const eventMatches = useMemo(() => (playEvent ? matchEvents(events.filter((e) => e.live), text) : []), [events, text, playEvent]);
   const genreMatches = text.length >= 2 ? genres.filter((g) => g.toLowerCase().startsWith(text.toLowerCase()) || g.toLowerCase().includes(` ${text.toLowerCase()}`)).slice(0, 4) : [];
 
   // Live search, debounced while typing; results cached per query.
@@ -106,7 +116,7 @@ export const Search = ({state, openMeta, openGenre, onBack}: SearchProps) => {
       <View style={styles.left}>
         <View style={styles.queryBox}>
           <Text style={[styles.query, !query && styles.placeholder]} numberOfLines={1}>
-            {query || 'Search titles, people, genres'}
+            {query || 'Search titles, genres, channels, teams'}
           </Text>
           <View style={styles.caret} />
         </View>
@@ -126,6 +136,21 @@ export const Search = ({state, openMeta, openGenre, onBack}: SearchProps) => {
           <View style={styles.genres}>
             {genreMatches.map((g) => (
               <Pill key={g} label={g} onPress={() => openGenre(g)} />
+            ))}
+          </View>
+        ) : null}
+        {eventMatches.length || channelMatches.length ? (
+          <View style={styles.live}>
+            {eventMatches.map((e) => (
+              <Pill key={e.key} label={`● LIVE  ${e.title}${e.channelName ? `  ·  ${e.channelName}` : ''}`} onPress={() => playEvent?.(e)} style={styles.livePill} />
+            ))}
+            {channelMatches.map((c) => (
+              <Pill
+                key={c.id}
+                label={`${c.number}  ${c.name}`}
+                onPress={() => playChannel?.(c, channels.filter((x) => x.category === c.category))}
+                style={styles.livePill}
+              />
             ))}
           </View>
         ) : null}
@@ -160,6 +185,8 @@ const styles = StyleSheet.create({
   keyTextFocused: {color: '#000'},
   right: {flex: 1, paddingRight: 40},
   genres: {flexDirection: 'row', marginBottom: 16},
+  live: {flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10},
+  livePill: {marginBottom: 10, paddingHorizontal: 22, paddingVertical: 10},
   heading: {color: brand.text, fontSize: type.heading, fontWeight: '800', marginLeft: 12, marginBottom: 6},
   grid: {paddingBottom: 120},
   muted: {color: brand.textMuted, fontSize: type.small, marginTop: 20},

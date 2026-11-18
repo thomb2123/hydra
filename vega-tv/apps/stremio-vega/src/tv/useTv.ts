@@ -220,10 +220,21 @@ export function useTv(): TvState {
       setFavourites(await loadJson<string[]>(FAVOURITES_KEY, []));
       setRecent(await loadJson<string[]>(RECENT_KEY, []));
       const saved = await fx.loadAccess();
+      // The channel list is read after the home screen has had a moment to appear, in
+      // timed steps with breaks between (the log says which part of start-up is slow).
+      await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+      let t0 = Date.now();
       const cached = await loadCachedGuide();
+      const loadMs = Date.now() - t0;
       setAccess(saved);
-      if (cached) {
-        setGuide(await reRank(cached));
+      await breathe();
+      t0 = Date.now();
+      const ranked = cached ? await reRank(cached) : null;
+      // eslint-disable-next-line no-console
+      console.log(`[stremio] tv start: guide read ${loadMs} ms, ranked ${Date.now() - t0} ms (${cached?.channels.length || 0} channels)`);
+      await breathe();
+      if (ranked) {
+        setGuide(ranked);
       }
       setReady(true);
       if (saved && isStale(cached)) {

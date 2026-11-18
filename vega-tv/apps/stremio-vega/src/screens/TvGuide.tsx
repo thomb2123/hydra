@@ -4,10 +4,11 @@
 // channel you rest on is checked in the background so OK starts it at once.
 // The guide reopens on the last channel watched, like a TV box.
 import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {FlatList, Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {FlatList, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {TVFocusGuideView} from '@amazon-devices/react-native-kepler';
 import {Pill} from '../ui/Cards';
 import {brand, edge, type} from '../ui/brand';
+import {ChannelLogo} from '../ui/ChannelLogo';
 import {CATEGORIES} from '../tv/lineup';
 import {MergedChannel} from '../tv/channels';
 import {NowNext, cachedNowNext, cleanTitle, displayTitle, msUntilChange, nowNext, nowTag, progressOf, timeRange} from '../tv/epg';
@@ -451,7 +452,7 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, favourit
       accessibilityLabel={`${channel.name}${now?.title ? `, now ${cleanTitle(now.title)}` : ''}`}
       style={[styles.row, focused && styles.rowFocused]}>
       <View style={styles.logoBox}>
-        {channel.logo ? <Image source={{uri: channel.logo}} style={styles.logo} resizeMode="contain" /> : <Text style={styles.logoText}>{channel.name}</Text>}
+        <ChannelLogo uri={channel.logo} name={channel.name} style={styles.logo} textStyle={styles.logoText} />
       </View>
       <View style={styles.rowMain}>
         <View style={styles.rowTop}>

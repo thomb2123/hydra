@@ -2,8 +2,9 @@
 // channel number and logo, what's on (time, title, progress) and what's next.
 // Shown while a channel tunes, for a few seconds after it starts, and on OK.
 import React from 'react';
-import {Image, StyleSheet, Text, View} from 'react-native';
+import {StyleSheet, Text, View} from 'react-native';
 import {brand, type} from '../ui/brand';
+import {ChannelLogo} from '../ui/ChannelLogo';
 import {NowNext, displayTitle, nowTag, progressOf, timeRange} from './epg';
 import {guideLabel} from './officialGuide';
 
@@ -33,7 +34,7 @@ export const ChannelBanner = ({number, name, logo, badge, info, fallbackTitle, s
         <View style={styles.idCol}>
           {number ? <Text style={styles.number}>{number}</Text> : null}
           <View style={styles.logoBox}>
-            {logo ? <Image source={{uri: logo}} style={styles.logo} resizeMode="contain" /> : <Text style={styles.logoText} numberOfLines={2}>{name}</Text>}
+            <ChannelLogo uri={logo} name={name} style={styles.logo} textStyle={styles.logoText} />
           </View>
         </View>
         <View style={styles.main}>
