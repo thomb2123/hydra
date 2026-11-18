@@ -220,6 +220,18 @@ cloud workspace can't reach).
   - Build note: `check_others.sh` used to rsync `shared/src` with `--delete` and no vendor exclude, wiping the Shaka build in the WSL clone (build failed "Unable to resolve ./vendor/polyfills"); fixed, and `scripts/build-shaka.sh` restores it.
   - Subtitle failures in the 17:00–18:00 log were the community mirror (opensubtitles.stremio.homes, still unreachable on 18 Nov 22:00); every film since the official-server rewrite loaded English subtitles.
 
+- **Features and polish (18 Nov, late night; all checked on the TV unless noted):**
+  - **Live Sport Now** row on Home under Continue Watching (`ui/LiveSportRow.tsx`): live matches, TV-guide confirmed first, sport colour stripe; OK plays it. Hidden when nothing is live.
+  - **Live Now accuracy:** a single shared word no longer confirms a match ("Grand Prix" matched IndyCar Monterey to Sky's Las Vegas F1 replay); fixtures need both sides named, other events two distinctive words (`GENERIC_TOKEN` in `tv/events.ts`). A match the official guide lists *without* Live is a re-run and is dropped (UFC 334 Gane v Hokit on TNT Sports 3 at 22:00 Wed was a replay). Checked: "live now: none" afterwards, which matched Sky.
+  - **Channel list while watching** (`tv/MiniGuide.tsx`): OK shows the banner (now with remote hints), OK again opens the category's channels with what is on now, opened at the one playing ("● Watching"); OK switches, Back closes. Presses in its first 0.7 s are ignored (the opening OK's release otherwise chose the row and closed it).
+  - **Search** finds live channels by name or number and live matches by team (`tv/searchMatch.ts`); film results named with every typed word first, no-artwork results dropped, duplicates across add-ons merged, titles shown on posters until the image loads; typing no longer redraws keyboard and results (blocks 0.35–0.6 s per letter before).
+  - **More Like This** on film pages (`similarTitles` in `stremio/recommend.ts`, shared genres weighted).
+  - **Series:** a finished episode moves Play on to the next released one; the episode row opens at it; finished episodes show "✓ Watched" (not yet seen on the TV).
+  - **Settings:** subtitle size (Smaller / Standard / Larger, `SUBTITLE_SCALE`; not tried in playback) and Open on (Home / Live TV, not tried at launch); subtitle language shown by name.
+  - **Billboard** shows year, rating, genres and synopsis for Continue Watching titles (the featured store ignored a second update for the same id; it now lets one through that adds a description). Ratings "N/A" hidden; strip-shaped or broken channel logos fall back to the name (`ui/ChannelLogo.tsx`).
+  - Start-up reads the channel list 1.2 s after Home appears, timed in the log (`tv start: guide read … ranked …`, 0.15–0.9 s + 0.3 s).
+  - Testing notes: the stick's developer shell (`com.amazon.dev.shell.service`) sometimes disappears for ~4 minutes after an app launch, which stops screenshots, keys and the log stream; wait and retry. `shot.sh` now deletes old copies so a failed capture cannot return a stale picture.
+
 ## Open issues (in priority order)
 
 1. **About 5 minutes into a film, playback stalled** (engine only; films now play in the
