@@ -657,97 +657,85 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       startUrl(activeUrl);
       return;
     }
-    // Films play in the platform's own player straight from the debrid server: smooth
-    // picture and sound at full speed (the in-app engine repackages in JavaScript and
-    // stutters on this stick). The TV's refresh rate is matched to the film first. Only a
-    // resume or skip the platform player refuses (inside MKV) reopens the film in the
-    // engine at that point (see verifySeek).
+    // Films (MKV) go through the in-app engine: it can resume and skip inside MKV (the
+    // platform player cannot), reads the film's own English audio and subtitles, and puts
+    // every frame on the exact frame grid. Anything it cannot take (MP4, other codecs) plays
+    // in the platform's own player. The add-on redirect is followed once, "not cached"
+    // placeholder clips are refused, and the TV is switched to the film's frame rate before
+    // the picture starts.
     const fpsFound: Promise<number | undefined> = source.live
       ? Promise.resolve(undefined)
       : source.videoFps
         ? Promise.resolve(source.videoFps)
         : detectFrameRate(activeUrl, 3000);
-    const matchFrameRate = (fps: number | undefined) => {
-      if (playerRef.current !== player || displayMatched.current) {
+    const openEngine = (url: string) => {
+      const start = pendingStart.current;
+      openMkv(
+        player,
+        url,
+        {
+          startAt: start ?? 0,
+          log,
+          preferredAudio: ['eng', 'en'],
+          onSubtitles: () => setEmbeddedVersion((v) => v + 1),
+        },
+        {MediaSource: W3CMediaSource},
+      )
+        .then((session) => {
+          if (playerRef.current !== player) {
+            session?.unload();
+            return;
+          }
+          if (!session) {
+            log('progressive: not Matroska, playing in the platform player');
+            startUrl(url);
+            return;
+          }
+          mkvRef.current = session;
+          audioLanguageRef.current = normaliseLang(session.info.audioLanguage) || 'eng';
+          pendingStart.current = null; // the engine starts at the resume point itself
+          setEmbedded(session.info.subtitles);
+          setAudioLabel(`${languageLabel(session.info.audioLanguage)} · ${session.info.audioLabel}`);
+          player.autoplay = true;
+          try {
+            const result: any = player.play();
+            result?.catch?.((e: any) => log(`play() rejected: ${e?.message || e}`));
+          } catch (e: any) {
+            log(`play() threw: ${e?.message || e}`);
+          }
+        })
+        .catch((e: any) => {
+          log(`mkv engine failed (${e?.message || e}); using URL mode`);
+          if (playerRef.current === player && !mkvRef.current) {
+            startUrl(url);
+          }
+        });
+    };
+    Promise.all([resolveRedirect(activeUrl), fpsFound]).then(([direct, fps]) => {
+      if (playerRef.current !== player) {
         return;
       }
-      if (fps) {
+      // Debrid add-ons redirect to a "not ready yet" clip when the file is not cached.
+      if (/\/\/slate\.|\/slate[./]|not[_-]?ready/i.test(direct) && onFailedRef.current && !failedRef.current) {
+        failedRef.current = true;
+        log(`start failed: placeholder clip (${hostOf(direct)}), not the film`);
+        onFailedRef.current('placeholder clip (not cached)');
+        return;
+      }
+      if (fps && !displayMatched.current) {
         displayMatched.current = matchDisplayTo(standardRate(fps), log);
-      } else {
+      } else if (!fps) {
         log('frame rate unknown: display left as it is');
       }
-    };
-    if (!source.engine) {
-      // The display switches (a moment of black) before the picture starts, not mid-film.
-      Promise.all([resolveRedirect(activeUrl), fpsFound]).then(([direct, fps]) => {
-        if (playerRef.current !== player) {
-          return;
-        }
-        // Debrid add-ons redirect to a "not ready yet" clip when the file is not cached.
-        if (/\/\/slate\.|\/slate[./]|not[_-]?ready/i.test(direct) && onFailedRef.current && !failedRef.current) {
-          failedRef.current = true;
-          log(`start failed: placeholder clip (${hostOf(direct)}), not the film`);
-          onFailedRef.current('placeholder clip (not cached)');
-          return;
-        }
-        matchFrameRate(fps);
-        const go = () => {
-          if (playerRef.current === player) {
-            log(`progressive: playing directly${direct !== activeUrl ? ` from ${hostOf(direct)}` : ''}`);
-            startUrl(direct);
-          }
-        };
-        // Let the TV settle on the new refresh rate before the player opens the file
-        // (opening during the switch can silence the player's events).
-        if (displayMatched.current) {
-          setTimeout(go, 1500);
-        } else {
-          go();
-        }
-      });
-      return;
-    }
-    fpsFound.then(matchFrameRate);
-    const start = pendingStart.current;
-    openMkv(
-      player,
-      activeUrl,
-      {
-        startAt: start ?? 0,
-        log,
-        preferredAudio: ['eng', 'en'],
-        onSubtitles: () => setEmbeddedVersion((v) => v + 1),
-      },
-      {MediaSource: W3CMediaSource},
-    )
-      .then((session) => {
-        if (playerRef.current !== player) {
-          session?.unload();
-          return;
-        }
-        if (!session) {
-          startUrl(activeUrl);
-          return;
-        }
-        mkvRef.current = session;
-        audioLanguageRef.current = normaliseLang(session.info.audioLanguage) || 'eng';
-        pendingStart.current = null; // the engine starts at the resume point itself
-        setEmbedded(session.info.subtitles);
-        setAudioLabel(`${languageLabel(session.info.audioLanguage)} · ${session.info.audioLabel}`);
-        player.autoplay = true;
-        try {
-          const result: any = player.play();
-          result?.catch?.((e: any) => log(`play() rejected: ${e?.message || e}`));
-        } catch (e: any) {
-          log(`play() threw: ${e?.message || e}`);
-        }
-      })
-      .catch((e: any) => {
-        log(`mkv engine failed (${e?.message || e}); using URL mode`);
-        if (playerRef.current === player && !mkvRef.current) {
-          startUrl(activeUrl);
-        }
-      });
+      // Let the TV settle on the new refresh rate before the file is opened (opening during
+      // the switch can silence the player's events).
+      const go = () => playerRef.current === player && openEngine(direct);
+      if (displayMatched.current) {
+        setTimeout(go, 1500);
+      } else {
+        go();
+      }
+    });
   }, [log, source.live, source.mime, source.startAt, activeUrl, startUrl]);
 
   // Create the player once per source (and again when switching to the alternative route).

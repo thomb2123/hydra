@@ -12,6 +12,7 @@ import {CATEGORIES} from '../tv/lineup';
 import {MergedChannel} from '../tv/channels';
 import {NowNext, cachedNowNext, cleanTitle, nowNext, progressOf, timeRange} from '../tv/epg';
 import {LIVE_NOW_ID, SportEvent} from '../tv/events';
+import {ProgrammeTag} from '../tv/scores';
 import {prefetchChannel} from '../tv/tune';
 import {TvState} from '../tv/useTv';
 import * as fx from '../tv/flixnest';
@@ -89,6 +90,7 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
     }
   }, []);
   const access = tv.access;
+  const tagFor = tv.programmeTag;
   const renderChannel = useCallback(
     ({item, index}: {item: MergedChannel; index: number}) => (
       <ChannelRow
@@ -97,10 +99,11 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
         preferred={index === resumeIndex}
         liveTitle={liveOnRef.current.get(item.id)}
         onFocused={markSettled}
+        tagFor={tagFor}
         onPress={() => playChannel(item, list)}
       />
     ),
-    [access, resumeIndex, markSettled, playChannel, list],
+    [access, resumeIndex, markSettled, playChannel, list, tagFor],
   );
   const renderEvent = useCallback(
     ({item, index}: {item: SportEvent; index: number}) => <EventRow event={item} preferred={index === resumeEvent} onFocused={markSettled} onPress={() => playEvent(item)} />,
@@ -251,7 +254,7 @@ const Clock = () => {
 
 type Avail = 'unknown' | 'checking' | 'on' | 'off';
 
-export const ChannelRow = memo(({access, channel, preferred, liveTitle, onFocused, onPress}: {access: fx.Access; channel: MergedChannel; preferred?: boolean; liveTitle?: string; onFocused?: () => void; onPress: () => void}) => {
+export const ChannelRow = memo(({access, channel, preferred, liveTitle, onFocused, tagFor, onPress}: {access: fx.Access; channel: MergedChannel; preferred?: boolean; liveTitle?: string; onFocused?: () => void; tagFor?: (title: string) => ProgrammeTag; onPress: () => void}) => {
   const [focused, setFocused] = useState(false);
   const [avail, setAvail] = useState<Avail>('unknown');
   const [info, setInfo] = useState<NowNext | null>(() => cachedNowNext(channel));
@@ -285,6 +288,8 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, onFocuse
   const now = info?.now;
   const next = info?.next;
   const progress = progressOf(now);
+  // LIVE / REPLAY next to what is on, so a re-run is obvious before choosing the channel.
+  const tag = now?.title && tagFor ? tagFor(now.title) : null;
   const nowText = now?.title ? `${timeRange(now)}  ${cleanTitle(now.title)}` : liveTitle ? `Live  ${liveTitle}` : info ? 'No listings available' : ' ';
   return (
     <TouchableOpacity
@@ -312,6 +317,7 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, onFocuse
           {avail === 'off' ? <Text style={styles.offAir}>Off air right now</Text> : null}
         </View>
         <Text numberOfLines={1} style={[styles.nowTitle, focused && styles.textFocused, avail === 'off' && styles.dim]}>
+          {tag ? <Text style={tag === 'LIVE' ? styles.tagLive : styles.tagReplay}>{tag === 'LIVE' ? 'LIVE  ' : 'REPLAY  '}</Text> : null}
           {nowText}
         </Text>
         <View style={styles.progressTrack}>
@@ -464,6 +470,8 @@ const styles = StyleSheet.create({
   chName: {color: brand.text, fontSize: type.body + 2, fontWeight: '800', flexShrink: 1},
   textFocused: {color: brand.text},
   badge: {color: brand.text, fontSize: 15, fontWeight: '900', borderWidth: 2, borderColor: brand.textMuted, borderRadius: 4, paddingHorizontal: 6, marginLeft: 12},
+  tagLive: {color: '#ff4d5e', fontWeight: '900'},
+  tagReplay: {color: brand.textMuted, fontWeight: '900'},
   nowTitle: {color: brand.textSoft, fontSize: type.small + 1, marginTop: 4},
   desc: {color: brand.textMuted, fontSize: type.tiny, marginTop: 4},
   progressTrack: {height: 4, backgroundColor: brand.surfaceRaised, borderRadius: 2, marginTop: 8, marginRight: 40},

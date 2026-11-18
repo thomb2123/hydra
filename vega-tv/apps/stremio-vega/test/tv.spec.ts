@@ -263,3 +263,29 @@ describe('live now: matches with no play going on', () => {
     expect(applyScores(listed, playing, now).map((e) => e.verified)).toEqual([true]);
   });
 });
+
+import {programmeTag} from '../src/tv/scores';
+
+describe('guide programme tags', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const board = (state: string, home: string, away: string) => ({
+    name: `${away} at ${home}`,
+    date: new Date((now - 3600) * 1000).toISOString(),
+    status: {type: {state, description: state === 'in' ? 'Second Half' : 'Full Time'}},
+    competitions: [{competitors: [{team: {displayName: home}}, {team: {displayName: away}}]}],
+  });
+  const scores = (...events: any[]): Scores => ({events: parseBoard('Football', {events}), covered: new Set(['Football'])});
+
+  it('marks a match being played as LIVE and a finished one as REPLAY', () => {
+    expect(programmeTag('Live: Borussia Dortmund v Bayern Munich', scores(board('in', 'Borussia Dortmund', 'Bayern Munich')), now)).toBe('LIVE');
+    expect(programmeTag('Bundesliga: Borussia Dortmund v Bayern Munich', scores(board('post', 'Borussia Dortmund', 'Bayern Munich')), now)).toBe('REPLAY');
+  });
+
+  it('marks highlights, classics and old seasons as REPLAY, plain shows as nothing', () => {
+    expect(programmeTag('Premier League Years 13/14', null, now)).toBe('REPLAY');
+    expect(programmeTag('EFL Highlights', null, now)).toBe('REPLAY');
+    expect(programmeTag('Champions Cup · 2021 Semi-Final', null, now)).toBe('REPLAY');
+    expect(programmeTag('Sports Desk', null, now)).toBeNull();
+    expect(programmeTag('Live 1st Test Day 4', null, now)).toBe('LIVE');
+  });
+});

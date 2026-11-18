@@ -7,7 +7,7 @@ import {GuideData, buildGuide, isStale, loadCachedGuide, reRank} from './guide';
 import {EARLY_SEC, SportEvent, buildEvents, eventTokens, feedLabel, guideAgrees, isOnNow, liveNow} from './events';
 import {firstLive, prefetchChannel} from './tune';
 import {nowNext} from './epg';
-import {applyScores, fetchScores} from './scores';
+import {ProgrammeTag, Scores, applyScores, fetchScores, programmeTag} from './scores';
 import {loadJson, saveJson} from '../../../../shared/src/storage';
 
 const LAST_KEY = 'tv.last.v1';
@@ -32,6 +32,8 @@ export interface TvState {
   rebuild: () => Promise<void>;
   refreshRanking: () => Promise<void>;
   refreshEvents: () => Promise<void>;
+  /** LIVE / REPLAY tag for a channel's current programme (from live scores). */
+  programmeTag: (title: string) => ProgrammeTag;
 }
 
 /**
@@ -56,6 +58,7 @@ export function useTv(): TvState {
   const [building, setBuilding] = useState<TvState['building']>(null);
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<SportEvent[]>([]);
+  const [scores, setScores] = useState<Scores | null>(null);
   const [last, setLastState] = useState<LastWatched | null>(null);
   const buildingRef = useRef(false);
   const guideRef = useRef<GuideData | null>(null);
@@ -109,6 +112,9 @@ export function useTv(): TvState {
       const built = buildEvents(items, g.channels);
       // Listings call re-runs "live"; live scores say what is really in progress.
       const scores = await fetchScores().catch(() => null);
+      if (scores) {
+        setScores(scores);
+      }
       const scored = applyScores(built, scores);
       // (No background stream checks: each one opens a session on the IPTV account, and
       // the providers' connection limits then refuse films and channels the viewer opens.
@@ -232,7 +238,8 @@ export function useTv(): TvState {
     saveJson(LAST_KEY, next);
   }, []);
 
-  return {ready, access, guide, building, error, events: liveEvents, last, setLast, connect, disconnect, rebuild, refreshRanking, refreshEvents};
+  const tagProgramme = useCallback((title: string) => programmeTag(title, scores), [scores]);
+  return {ready, access, guide, building, error, events: liveEvents, last, setLast, connect, disconnect, rebuild, refreshRanking, refreshEvents, programmeTag: tagProgramme};
 }
 
 const EVENTS_REFRESH_MS = 2 * 60 * 1000;

@@ -109,7 +109,7 @@ cloud workspace can't reach).
 
 ## Verified on the stick, 18 Nov evening (supersedes the playback notes below)
 
-- **Films play in the platform's own player** (URL mode), straight from the debrid
+- **MKV films play through the in-app engine** (resume and skipping need it: the platform player cannot seek inside MKV); MP4 and others play in the platform player, straight from the debrid
   server (the add-on redirect is followed once). This is the only path that plays 4K
   smoothly here: the in-app MKV engine reads through JavaScript XHR and its remux gave
   micro-stutter and audio stutter on 4K even on 5 GHz. The engine (restored to the

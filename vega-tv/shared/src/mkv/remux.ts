@@ -72,7 +72,12 @@ export class MkvRemuxer {
     const v = this.video as RemuxTrack;
     const ts = v.config.timescale;
     const frameTicks = Math.round(v.config.frameDuration * ts);
-    const pts = frames.map((f) => Math.round(f.pts * ts));
+    // Matroska stores times in whole milliseconds, so 23.976 fps frames arrive 41, 42, 42 ms
+    // apart instead of 41.708: against a display refreshing at exactly the film's rate that
+    // jitter repeats or drops a frame now and then (micro-stutter). Snap every frame to the
+    // exact frame grid from the track's declared frame duration, as proper demuxers do.
+    const grid = v.config.frameDuration;
+    const pts = frames.map((f) => Math.round((grid > 0 ? Math.round(f.pts / grid) * grid : f.pts) * ts));
     // Frames are stored in decode order with presentation times. Decode times are the
     // sorted presentation times moved earlier by the reorder delay, so no frame is due for
     // decoding after it should be on screen (B-frames otherwise arrive late and are shown

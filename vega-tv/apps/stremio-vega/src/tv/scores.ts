@@ -96,6 +96,36 @@ export function looksLikeReplay(e: Pick<SportEvent, 'title' | 'competition' | 's
 
 export type Verdict = 'live' | 'finished' | 'not-started' | 'unknown';
 
+export type ProgrammeTag = 'LIVE' | 'REPLAY' | null;
+const REPLAY_WORDS = /highlights|replay|classic|rewind|\bretro\b|flashback|greatest|best of|\byears\b|review|preview|magazine|documentary|\bstor(?:y|ies)\b|reloaded|encore/i;
+
+/**
+ * Tags a channel's current programme for the guide: LIVE when live scores say the match
+ * in the title is in progress (or the listing says "Live"), REPLAY when the match finished
+ * earlier, the title names an old year, or it is highlights/classics; otherwise nothing.
+ */
+export function programmeTag(title: string, scores: Scores | null, now = Date.now() / 1000): ProgrammeTag {
+  const text = String(title || '').replace(/\s+/g, ' ').trim();
+  if (!text) {
+    return null;
+  }
+  if (REPLAY_WORDS.test(text) || looksLikeReplay({title: text, competition: '', sport: '', start: 0}, now)) {
+    return 'REPLAY';
+  }
+  const saysLive = /^\s*live\b|\blive\s*[:|-]/i.test(text);
+  const fixture = text.replace(/^\s*live\s*[:|-]?\s*/i, '').replace(/^[^:]{2,40}:\s*/, '');
+  if (scores && /\s(?:v|vs\.?|at|@)\s/i.test(fixture)) {
+    const mine = scores.events.filter((s) => sameEvent({title: fixture, competition: ''}, s));
+    if (mine.some((s) => s.state === 'in' && !NOT_PLAYING.test(s.detail))) {
+      return 'LIVE';
+    }
+    if (mine.length && mine.every((s) => s.state === 'post' || NOT_PLAYING.test(s.detail))) {
+      return 'REPLAY';
+    }
+  }
+  return saysLive ? 'LIVE' : null;
+}
+
 function judge(e: SportEvent, scores: Scores | null, now: number): {verdict: Verdict; start?: number} {
   if (looksLikeReplay(e, now)) {
     return {verdict: 'finished'};
