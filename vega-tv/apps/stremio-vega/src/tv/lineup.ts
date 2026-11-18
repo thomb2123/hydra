@@ -16,6 +16,8 @@ export interface Channel {
   country: Country;
   category: string;
   keys: string[];
+  /** Channel number shown in the guide and banner (our own numbering, stable). */
+  number: number;
 }
 
 export const CATEGORIES: Category[] = [
@@ -34,8 +36,25 @@ export const CATEGORIES: Category[] = [
 
 type Row = [id: string, name: string, keys?: string[]];
 
+// First channel number of each category, TV-box style (entertainment 101, films
+// 301, sport 401, news 501, US from 601).
+const FIRST_NUMBER: Record<string, number> = {
+  'uk-ent': 101,
+  'uk-drama': 131,
+  'uk-docs': 161,
+  'uk-films': 301,
+  'uk-sport': 401,
+  'uk-news': 501,
+  'us-net': 601,
+  'us-ent': 621,
+  'us-sport': 661,
+  'us-films': 691,
+  'us-news': 711,
+};
+
 function rows(country: Country, category: string, list: Row[]): Channel[] {
-  return list.map(([id, name, keys]) => ({
+  return list.map(([id, name, keys], i) => ({
+    number: (FIRST_NUMBER[category] || 900) + i,
     id: `${country.toLowerCase()}-${id}`,
     name,
     country,

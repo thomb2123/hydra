@@ -25,6 +25,8 @@ export interface Source {
 export interface MergedChannel extends Channel {
   sources: Source[];
   logo: string;
+  /** Picture quality to advertise: UHD only once this stick has actually played it. */
+  badge: 'UHD' | 'HD' | '';
 }
 
 export function categoryUseful(category: string): boolean {
@@ -72,19 +74,54 @@ export function collectSources(
 export interface Reliability {
   /** provider -> recent success ratio 0..1 (default 0.7). */
   provider: Record<string, number>;
-  /** source id -> failures recorded on this stick. */
+  /** "provider|id" -> failures recorded on this stick. */
   failures: Record<string, number>;
+  /** "provider|id" -> when it last failed (ms); old failures count for less. */
+  failedAt?: Record<string, number>;
+  /** "provider|id" -> when it last played properly (ms). */
+  good?: Record<string, number>;
+  /** "provider|id" -> picture height measured when it played (e.g. 2160). */
+  height?: Record<string, number>;
 }
 
-export function rankSources(sources: Source[], reliability?: Reliability): Source[] {
+const HOUR = 3600 * 1000;
+const FAILURE_HALF_LIFE = 12 * HOUR;
+const GOOD_FOR = 3 * 24 * HOUR;
+
+export const sourceKey = (s: Pick<Source, 'provider' | 'id'>) => `${s.provider}|${s.id}`;
+
+/** Failures fade with time, so a channel that was off air last night is tried again today. */
+export function effectiveFailures(rel: Reliability | undefined, key: string, now = Date.now()): number {
+  const n = rel?.failures[key] || 0;
+  if (!n) {
+    return 0;
+  }
+  const at = rel?.failedAt?.[key];
+  return at ? n * Math.pow(0.5, Math.max(0, now - at) / FAILURE_HALF_LIFE) : n;
+}
+
+export function rankSources(sources: Source[], reliability?: Reliability, now = Date.now()): Source[] {
   const score = (s: Source) => {
+    const key = sourceKey(s);
     const providerOk = reliability?.provider[s.provider] ?? 0.7;
-    const failed = reliability?.failures[`${s.provider}|${s.id}`] || 0;
-    // Quality dominates; reliability breaks ties, and two failures on this stick push
-    // a source below a working one of the next quality down.
-    return s.quality * 10 + (s.fps60 ? 1 : 0) + providerOk * 4 - Math.min(failed, 5) * 12;
+    const failed = Math.min(effectiveFailures(reliability, key, now), 5);
+    const recentGood = now - (reliability?.good?.[key] || 0) < GOOD_FOR ? 1 : 0;
+    const height = reliability?.height?.[key] || 0;
+    // Real picture size beats the provider's label once we have measured it.
+    const quality = height >= 2000 ? 4 : height >= 1000 ? Math.max(3, Math.min(s.quality, 3)) : height > 0 ? 2 : s.quality;
+    // Quality dominates; a source that played recently gets a boost, and two
+    // recent failures push a source below a working one of the next quality down.
+    return quality * 10 + (s.fps60 ? 1 : 0) + providerOk * 4 + recentGood * 6 - failed * 12;
   };
   return [...sources].sort((a, b) => score(b) - score(a));
+}
+
+export function badgeFor(sources: Source[], reliability?: Reliability): MergedChannel['badge'] {
+  const top = sources.slice(0, 3);
+  if (top.some((s) => (reliability?.height?.[sourceKey(s)] || 0) >= 2000)) {
+    return 'UHD';
+  }
+  return top.some((s) => s.quality >= 2) ? 'HD' : '';
 }
 
 export function mergeChannels(found: Map<string, Source[]>, reliability?: Reliability): MergedChannel[] {
@@ -95,7 +132,12 @@ export function mergeChannels(found: Map<string, Source[]>, reliability?: Reliab
       continue;
     }
     const ranked = rankSources(sources, reliability).slice(0, 8);
-    out.push({...channel, sources: ranked, logo: (ranked.find((s) => /^https:/.test(s.logo)) || {logo: ''}).logo});
+    out.push({
+      ...channel,
+      sources: ranked,
+      logo: (ranked.find((s) => /^https:/.test(s.logo)) || {logo: ''}).logo,
+      badge: badgeFor(ranked, reliability),
+    });
   }
   return out;
 }

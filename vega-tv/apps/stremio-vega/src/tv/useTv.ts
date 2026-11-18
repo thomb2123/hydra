@@ -4,6 +4,15 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 import * as fx from './flixnest';
 import {GuideData, buildGuide, isStale, loadCachedGuide, reRank} from './guide';
 import {SportEvent, buildEvents} from './events';
+import {loadJson, saveJson} from '../../../../shared/src/storage';
+
+const LAST_KEY = 'tv.last.v1';
+
+/** Where the viewer was: the guide reopens on this category and channel, like a TV box. */
+export interface LastWatched {
+  category: string;
+  channelId: string;
+}
 
 export interface TvState {
   ready: boolean;
@@ -12,6 +21,8 @@ export interface TvState {
   building: {done: number; total: number; label: string} | null;
   error: string | null;
   events: SportEvent[];
+  last: LastWatched | null;
+  setLast: (last: LastWatched) => void;
   connect: (access: fx.Access) => Promise<void>;
   disconnect: () => Promise<void>;
   rebuild: () => Promise<void>;
@@ -26,6 +37,7 @@ export function useTv(): TvState {
   const [building, setBuilding] = useState<TvState['building']>(null);
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<SportEvent[]>([]);
+  const [last, setLastState] = useState<LastWatched | null>(null);
   const buildingRef = useRef(false);
   const guideRef = useRef<GuideData | null>(null);
   guideRef.current = guide;
@@ -76,6 +88,7 @@ export function useTv(): TvState {
 
   useEffect(() => {
     (async () => {
+      setLastState(await loadJson<LastWatched | null>(LAST_KEY, null));
       const saved = await fx.loadAccess();
       const cached = await loadCachedGuide();
       setAccess(saved);
@@ -126,5 +139,10 @@ export function useTv(): TvState {
     }
   }, []);
 
-  return {ready, access, guide, building, error, events, connect, disconnect, rebuild, refreshRanking, refreshEvents};
+  const setLast = useCallback((next: LastWatched) => {
+    setLastState((prev) => (prev && prev.channelId === next.channelId && prev.category === next.category ? prev : next));
+    saveJson(LAST_KEY, next);
+  }, []);
+
+  return {ready, access, guide, building, error, events, last, setLast, connect, disconnect, rebuild, refreshRanking, refreshEvents};
 }

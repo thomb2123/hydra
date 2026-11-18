@@ -74,7 +74,7 @@ describe('sport events', () => {
 
   it('keeps real English fixtures on UK/US sport channels only', () => {
     const events = buildEvents(raw, channels);
-    expect(events.map((e) => e.title)).toEqual(['FA Cup: Altrincham v Notts County', 'UFC Fight Night: Smith v Jones']);
+    expect(events.map((e) => `${e.title} | ${e.competition}`)).toEqual(['Altrincham v Notts County | FA Cup', 'Smith v Jones | UFC Fight Night']);
     expect(events[0].channelId).toBe('uk-tnt3');
     expect(events[1].feeds.map((f) => f.id)).toEqual(['x:5']);
   });

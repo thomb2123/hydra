@@ -63,8 +63,12 @@ export interface VideoScreenProps {
   onZap?: (step: number) => void;
   /** Called instead of showing an error when this source fails before it starts playing. */
   onFailed?: (reason: string) => void;
-  /** Called once, when this source first starts playing. */
-  onStarted?: () => void;
+  /** Called once, when this source first starts playing (with the picture size when known). */
+  onStarted?: (info: {width: number; height: number}) => void;
+  /** Live TV draws its own channel banner: hide the built-in controls and title bar. */
+  chromeless?: boolean;
+  /** Replaces OK/Select (e.g. show live TV's now/next banner instead of pausing). */
+  onInfo?: () => void;
   /** Replaces the Menu (☰) key action, e.g. live TV's source list. */
   onMenu?: () => void;
   /** Ignore remote keys and Back (another layer, such as a source list, has the remote). */
@@ -282,7 +286,7 @@ const PanelRow = ({label, selected, onPress, preferred}: {label: string; selecte
 
 // ---------------------------------------------------------------------------
 
-export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, onFailed, onStarted, onMenu, inputLocked, onNext, nextLabel, preferredSubtitle, onSubtitleChosen, onRouteSwitched}: VideoScreenProps) => {
+export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, onFailed, onStarted, onMenu, inputLocked, chromeless, onInfo, onNext, nextLabel, preferredSubtitle, onSubtitleChosen, onRouteSwitched}: VideoScreenProps) => {
   const autoSubDone = useRef(false);
   const mkvRef = useRef<MkvSession | null>(null);
   const [embedded, setEmbeddedState] = useState<EmbeddedSubtitleTrack[]>([]);
@@ -621,6 +625,25 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       return true;
     };
     const watchdog = source.startTimeoutMs ? setTimeout(() => fail('timed out starting'), source.startTimeoutMs) : null;
+    // Live channels: once playing, a long stall or an error hands over to the caller
+    // (which switches to the next source) instead of leaving a frozen picture.
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearStall = () => {
+      if (stallTimer) {
+        clearTimeout(stallTimer);
+        stallTimer = null;
+      }
+    };
+    const failLive = (reason: string) => {
+      if (disposed || failedRef.current || !source.live || !startedRef.current || !onFailedRef.current) {
+        return false;
+      }
+      failedRef.current = true;
+      clearStall();
+      log(`live source failed: ${reason}`);
+      onFailedRef.current(reason);
+      return true;
+    };
 
     const on = (name: string, fn: () => void) => player.addEventListener(name, fn as any);
     on('loadedmetadata', () => {
@@ -629,8 +652,18 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       setDuration(Number.isFinite(d) ? d : 0);
     });
     on('playing', () => {
+      clearStall();
       if (!startedRef.current) {
-        onStartedRef.current?.();
+        let width = 0;
+        let height = 0;
+        try {
+          width = Number((player as any).videoWidth) || 0;
+          height = Number((player as any).videoHeight) || 0;
+        } catch {
+          // Not reported on every build.
+        }
+        log(`started ${width}x${height}`);
+        onStartedRef.current?.({width, height});
       }
       startedRef.current = true;
       if (watchdog) {
@@ -681,7 +714,12 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       setHud(true);
       reportProgress(true);
     });
-    on('waiting', () => setBuffering(true));
+    on('waiting', () => {
+      setBuffering(true);
+      if (source.live && startedRef.current && !stallTimer) {
+        stallTimer = setTimeout(() => failLive('stalled for 15 s'), 15000);
+      }
+    });
     on('seeking', () => setBuffering(true));
     on('seeked', () => {
       setBuffering(false);
@@ -696,6 +734,7 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       if (Math.abs(t - lastTickPos.current) > 0.05) {
         lastTickAt.current = Date.now();
         lastTickPos.current = t;
+        clearStall();
       }
       if (scrubRef.current == null) {
         setPosition(Number(player.currentTime) || 0);
@@ -720,7 +759,7 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       const code = err ? Number(err.code) : 0;
       log(`error code=${code} message=${err?.message}`);
       const message = MEDIA_ERRORS[code] || 'This video could not be played.';
-      if (fail(err?.message || message)) {
+      if (fail(err?.message || message) || failLive(err?.message || message)) {
         return;
       }
       setError(message);
@@ -755,6 +794,7 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       if (watchdog) {
         clearTimeout(watchdog);
       }
+      clearStall();
       [hideTimer.current, seekCheck.current, scrubCommit.current].forEach((t) => t && clearTimeout(t));
       reportProgress(true);
       try {
@@ -976,7 +1016,9 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
     }
     switch (key) {
       case 'select':
-        if (scrubRef.current != null) {
+        if (onInfo) {
+          onInfo();
+        } else if (scrubRef.current != null) {
           commitScrub();
         } else if (!hud) {
           showHud();
@@ -1080,14 +1122,14 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
         </View>
       ) : null}
 
-      {(buffering || scrub != null || resumeNote) && !error && !panel ? (
+      {(buffering || scrub != null || resumeNote) && !error && !panel && !(chromeless && !startedRef.current) ? (
         <View style={styles.centre} pointerEvents="none">
           {buffering && scrub == null ? <Spinner /> : null}
           {resumeNote ? <Text style={styles.centreNote}>{resumeNote}</Text> : null}
         </View>
       ) : null}
 
-      {hud || error ? (
+      {(hud || error) && !chromeless ? (
         <>
           <View style={styles.topArea} pointerEvents="none">
             <Shade edge="top" size={260} />

@@ -37,7 +37,7 @@ type Route =
   | {name: 'categories'}
   | {name: 'genre'; genre: string}
   | {name: 'settings'}
-  | {name: 'tv'; list: MergedChannel[]; index: number; feeds?: Source[]; title?: string};
+  | {name: 'tv'; list: MergedChannel[]; index: number; feeds?: Source[]; title?: string; feedName?: string};
 
 const log = (line: string) => console.log(`[stremio] ${line}`);
 
@@ -63,9 +63,11 @@ export const App = () => {
     (event: SportEvent) => {
       const channel = event.channelId ? (tv.guide?.channels || []).find((c) => c.id === event.channelId) : undefined;
       if (channel) {
-        push({name: 'tv', list: [channel], index: 0, title: `${event.title}`});
+        // Play the channel within its category, so ▲/▼ zaps to its neighbours.
+        const siblings = (tv.guide?.channels || []).filter((c) => c.category === channel.category);
+        push({name: 'tv', list: siblings, index: Math.max(0, siblings.indexOf(channel)), title: event.title});
       } else if (event.feeds.length) {
-        push({name: 'tv', list: [], index: 0, feeds: event.feeds, title: event.title});
+        push({name: 'tv', list: [], index: 0, feeds: event.feeds, title: event.title, feedName: event.channelName});
       }
     },
     [push, tv.guide],
@@ -194,8 +196,10 @@ export const App = () => {
           index={route.index}
           feeds={route.feeds}
           title={route.title}
+          feedName={route.feedName}
           onExit={pop}
           onRanked={tv.refreshRanking}
+          onChannel={(c) => tv.setLast({category: c.category, channelId: c.id})}
           log={log}
         />
       ) : null;

@@ -2,7 +2,7 @@
 // caches it on the stick (rebuilt in the background once a day).
 import {loadJson, saveJson} from '../../../../shared/src/storage';
 import * as fx from './flixnest';
-import {MergedChannel, ProviderEntry, Reliability, Source, collectSources, categoryUseful, mergeChannels} from './channels';
+import {MergedChannel, ProviderEntry, Reliability, Source, collectSources, categoryUseful, mergeChannels, sourceKey} from './channels';
 import {Country} from './lineup';
 
 const GUIDE_KEY = 'tv.guide.v1';
@@ -32,23 +32,35 @@ export function isStale(guide: GuideData | null): boolean {
 }
 
 export async function resetReliability(): Promise<void> {
-  await saveJson(RELIABILITY_KEY, {provider: {}, failures: {}});
+  await saveJson(RELIABILITY_KEY, {provider: {}, failures: {}, failedAt: {}, good: {}, height: {}});
 }
 
 export async function loadReliability(): Promise<Reliability> {
   return loadJson<Reliability>(RELIABILITY_KEY, {provider: {}, failures: {}});
 }
 
-/** Records how a source behaved, so failing providers/sources sink in the ranking. */
-export async function recordResult(source: Source, ok: boolean): Promise<Reliability> {
+/**
+ * Records how a source behaved, so failing providers/sources sink in the ranking
+ * and ones that really played (at a measured picture height) rise.
+ */
+export async function recordResult(source: Source, ok: boolean, height?: number): Promise<Reliability> {
   const rel = await loadReliability();
+  rel.failedAt = rel.failedAt || {};
+  rel.good = rel.good || {};
+  rel.height = rel.height || {};
   const prev = rel.provider[source.provider] ?? 0.7;
   rel.provider[source.provider] = Math.max(0, Math.min(1, prev * 0.8 + (ok ? 1 : 0) * 0.2));
-  const key = `${source.provider}|${source.id}`;
+  const key = sourceKey(source);
   if (ok) {
     delete rel.failures[key];
+    delete rel.failedAt[key];
+    rel.good[key] = Date.now();
+    if (height && height > 0) {
+      rel.height[key] = height;
+    }
   } else {
     rel.failures[key] = (rel.failures[key] || 0) + 1;
+    rel.failedAt[key] = Date.now();
   }
   await saveJson(RELIABILITY_KEY, rel);
   return rel;

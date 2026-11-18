@@ -1,6 +1,8 @@
 // TV guide: categories down the left (Live Sport first), channels on the right
-// with logo, what's on now (time + progress) and what's next. One entry per real
-// channel; the best working source is chosen behind the scenes.
+// with number, logo, what's on now (time + progress) and what's next. One entry
+// per real channel; the best working source is chosen behind the scenes, and a
+// channel you rest on is checked in the background so OK starts it at once.
+// The guide reopens on the last channel watched, like a TV box.
 import React, {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {FlatList, Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {Pill} from '../ui/Cards';
@@ -9,6 +11,7 @@ import {CATEGORIES} from '../tv/lineup';
 import {MergedChannel} from '../tv/channels';
 import {NowNext, cachedNowNext, cleanTitle, nowNext, progressOf, timeRange} from '../tv/epg';
 import {SportEvent} from '../tv/events';
+import {prefetchChannel} from '../tv/tune';
 import {TvState} from '../tv/useTv';
 import * as fx from '../tv/flixnest';
 import {QrCode} from '../tv/QrCode';
@@ -28,9 +31,22 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
     const present = CATEGORIES.filter((c) => channels.some((ch) => ch.category === c.id));
     return tv.events.length ? [{id: SPORT_ID, title: 'Live Sport'}, ...present] : present;
   }, [channels, tv.events.length]);
-  const [categoryId, setCategoryId] = useState<string>('');
-  const active = categoryId || categories[0]?.id || '';
+  // Reopen where the viewer left off (last channel watched), else the first category.
+  const [categoryId, setCategoryId] = useState<string>(() => tv.last?.category || '');
+  const active = categories.some((c) => c.id === categoryId) ? categoryId : categories[0]?.id || '';
   const list = useMemo(() => channels.filter((c) => c.category === active), [channels, active]);
+  const resumeIndex = useMemo(() => (tv.last && tv.last.category === active ? list.findIndex((c) => c.id === tv.last!.channelId) : -1), [list, active, tv.last]);
+  // Sport channels without guide data show the match they are carrying.
+  const liveOn = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of tv.events) {
+      if (e.live && e.channelId && !map.has(e.channelId)) {
+        map.set(e.channelId, e.title);
+      }
+    }
+    return map;
+  }, [tv.events]);
+  const activeTitle = categories.find((c) => c.id === active)?.title || '';
 
   if (!tv.ready) {
     return <View style={styles.root}>{nav}</View>;
@@ -77,10 +93,14 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
       <View style={styles.body}>
         <View style={styles.side}>
           {categories.map((c, i) => (
-            <CategoryButton key={c.id} title={c.title} active={c.id === active} preferred={i === 0} onFocus={() => setCategoryId(c.id)} />
+            <CategoryButton key={c.id} title={c.title} active={c.id === active} preferred={resumeIndex < 0 && i === 0} onFocus={() => setCategoryId(c.id)} />
           ))}
         </View>
         <View style={styles.main}>
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>{activeTitle}</Text>
+            <Clock />
+          </View>
           {active === SPORT_ID ? (
             <FlatList
               key="sport"
@@ -95,11 +115,19 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
               key={active}
               data={list}
               keyExtractor={(c) => c.id}
-              initialNumToRender={7}
+              initialNumToRender={Math.max(7, resumeIndex + 3)}
               maxToRenderPerBatch={4}
               windowSize={3}
               removeClippedSubviews
-              renderItem={({item}) => <ChannelRow access={tv.access!} channel={item} onPress={() => playChannel(item, list)} />}
+              renderItem={({item, index}) => (
+                <ChannelRow
+                  access={tv.access!}
+                  channel={item}
+                  preferred={index === resumeIndex}
+                  liveTitle={liveOn.get(item.id)}
+                  onPress={() => playChannel(item, list)}
+                />
+              )}
             />
           )}
         </View>
@@ -127,9 +155,46 @@ const CategoryButton = ({title, active, preferred, onFocus}: {title: string; act
   );
 };
 
-export const ChannelRow = memo(({access, channel, onPress}: {access: fx.Access; channel: MergedChannel; onPress: () => void}) => {
+const Clock = () => {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 15000);
+    return () => clearInterval(timer);
+  }, []);
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  return (
+    <Text style={styles.clock}>
+      <Text style={styles.clockDate}>{`${days[now.getDay()]} ${now.getDate()} ${months[now.getMonth()]}   `}</Text>
+      {`${hh}:${mm}`}
+    </Text>
+  );
+};
+
+type Avail = 'unknown' | 'checking' | 'on' | 'off';
+
+export const ChannelRow = memo(({access, channel, preferred, liveTitle, onPress}: {access: fx.Access; channel: MergedChannel; preferred?: boolean; liveTitle?: string; onPress: () => void}) => {
   const [focused, setFocused] = useState(false);
+  const [avail, setAvail] = useState<Avail>('unknown');
   const [info, setInfo] = useState<NowNext | null>(() => cachedNowNext(channel));
+  // Resting on a channel for a moment checks it is really on air and readies its
+  // stream, so pressing OK starts the picture straight away.
+  useEffect(() => {
+    if (!focused) {
+      return undefined;
+    }
+    let alive = true;
+    const timer = setTimeout(() => {
+      setAvail((a) => (a === 'unknown' ? 'checking' : a));
+      prefetchChannel(access, channel).then((found) => alive && setAvail(found ? 'on' : 'off'));
+    }, 600);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [access, channel, focused]);
   useEffect(() => {
     let alive = true;
     if (!info) {
@@ -144,10 +209,11 @@ export const ChannelRow = memo(({access, channel, onPress}: {access: fx.Access; 
   const now = info?.now;
   const next = info?.next;
   const progress = progressOf(now);
-  const best = channel.sources[0]?.quality || 2;
+  const nowText = now?.title ? `${timeRange(now)}  ${cleanTitle(now.title)}` : liveTitle ? `Live  ${liveTitle}` : info ? 'No listings available' : ' ';
   return (
     <TouchableOpacity
       activeOpacity={1}
+      hasTVPreferredFocus={preferred}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -158,13 +224,16 @@ export const ChannelRow = memo(({access, channel, onPress}: {access: fx.Access; 
       </View>
       <View style={styles.rowMain}>
         <View style={styles.rowTop}>
+          <Text style={styles.chNumber}>{channel.number}</Text>
           <Text numberOfLines={1} style={[styles.chName, focused && styles.textFocused]}>
             {channel.name}
           </Text>
-          {best >= 4 ? <Text style={styles.badge}>UHD</Text> : best >= 3 ? <Text style={styles.badge}>HD</Text> : null}
+          {channel.badge ? <Text style={styles.badge}>{channel.badge}</Text> : null}
+          <View style={styles.flex} />
+          {avail === 'off' ? <Text style={styles.offAir}>Off air right now</Text> : null}
         </View>
-        <Text numberOfLines={1} style={[styles.nowTitle, focused && styles.textFocused]}>
-          {now?.title ? `${timeRange(now)}  ${cleanTitle(now.title)}` : info ? 'No guide information' : ' '}
+        <Text numberOfLines={1} style={[styles.nowTitle, focused && styles.textFocused, avail === 'off' && styles.dim]}>
+          {nowText}
         </Text>
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, {width: `${Math.round(progress * 100)}%`}]} />
@@ -197,8 +266,8 @@ const EventRow = ({event, onPress}: {event: SportEvent; onPress: () => void}) =>
         <Text numberOfLines={1} style={[styles.chName, focused && styles.textFocused]}>
           {event.title}
         </Text>
-        <Text numberOfLines={1} style={styles.nextTitle}>
-          {[event.sport, event.channelName].filter(Boolean).join(' · ')}
+        <Text numberOfLines={1} style={styles.eventMeta}>
+          {[event.competition || event.sport, event.channelName].filter(Boolean).join('  ·  ')}
         </Text>
       </View>
     </TouchableOpacity>
@@ -290,6 +359,15 @@ const styles = StyleSheet.create({
   body: {flex: 1, flexDirection: 'row', paddingTop: 10},
   side: {width: 380, paddingLeft: edge - 10, paddingRight: 16},
   main: {flex: 1, paddingRight: edge - 20},
+  header: {flexDirection: 'row', alignItems: 'baseline', paddingHorizontal: 6, marginBottom: 12},
+  headerTitle: {flex: 1, color: brand.text, fontSize: type.heading, fontWeight: '900'},
+  clock: {color: brand.text, fontSize: type.heading, fontWeight: '800'},
+  clockDate: {color: brand.textMuted, fontSize: type.body, fontWeight: '700'},
+  flex: {flex: 1},
+  chNumber: {color: brand.textMuted, fontSize: type.body, fontWeight: '800', width: 62},
+  offAir: {color: brand.textMuted, fontSize: type.tiny, fontWeight: '700', marginRight: 20},
+  dim: {color: brand.textMuted},
+  eventMeta: {color: brand.textSoft, fontSize: type.small, marginTop: 6},
   cat: {paddingVertical: 14, paddingHorizontal: 18, borderRadius: 8, marginBottom: 6},
   catActive: {backgroundColor: brand.surface},
   catFocused: {backgroundColor: brand.text},
