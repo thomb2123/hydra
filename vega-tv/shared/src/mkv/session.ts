@@ -702,6 +702,32 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
     }
     const t = Number(player.currentTime) || 0;
     const nowMs = Date.now();
+    // Look ahead while playing: a hole in what is buffered (a piece the platform
+    // dropped) is re-read before playback reaches it, so the picture never stops.
+    if (progressed && !player.paused && nowMs >= seekingUntil && nowMs - restartedAt > 10000) {
+      const ranges = playable();
+      const end = bufferedEndAt(ranges, t);
+      const after = nextRangeAfter(ranges, end, 60);
+      if (after != null && after - end > 0.3 && end - t < 10) {
+        log(`mkv: hole in the buffer at ${end.toFixed(1)} s (${(after - end).toFixed(1)} s); re-reading it before playback gets there`);
+        restart();
+        return;
+      }
+    }
+    // A sliver missing right where playback is: step over it at once.
+    if (!player.paused && nowMs >= seekingUntil && Math.abs(t - lastTime) <= 0.05 && nowMs - stillSince >= 600) {
+      const tiny = nextRangeAfter(playable(), t, 1);
+      if (tiny != null) {
+        log(`mkv: stepping over a ${(tiny - t).toFixed(2)} s gap at ${t.toFixed(2)}`);
+        try {
+          player.currentTime = tiny + 0.05;
+        } catch {
+          // Ignore.
+        }
+        stillSince = nowMs;
+        return;
+      }
+    }
     if (player.paused || nowMs < seekingUntil || Math.abs(t - lastTime) > 0.05 || !progressed) {
       if (lastTime >= 0 && Math.abs(t - lastTime) > 0.05 && !player.paused) {
         progressed = true;
@@ -745,7 +771,7 @@ export async function openMkv(player: any, url: string, options: MkvOptions, dep
       stillSince = nowMs;
       restart();
     }
-  }, 1000);
+  }, 500);
 
   log(`mkv: ready in ${Date.now() - began} ms: ${remux.video.config.label} + ${remux.audio?.config.label || 'no audio'} (${audioTrack?.language}); ${cues.length} cues; ${subtitleTracks.length} subtitle tracks`);
   offset = clusterAt(startAt);
