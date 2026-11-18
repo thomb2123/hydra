@@ -5,7 +5,7 @@ import {colors, fonts, safeArea, spacing} from '../../../../shared/src/ui/theme'
 import {useBackHandler} from '../../../../shared/src/tv/remote';
 import {PlaySource} from '../../../../shared/src/player/VideoScreen';
 import {StreamGroup, fetchStreams} from '../stremio/addons';
-import {describeStream} from '../stremio/streaming';
+import {DEBRID_ONLY, describeStream, isTorrentStream} from '../stremio/streaming';
 import {prepareSource, videoIdOf} from '../stremio/playback';
 import {analyseStream, summarise} from '../stremio/streamPicker';
 import {MetaDetail, Stream, Video} from '../stremio/types';
@@ -48,6 +48,9 @@ export const Streams = ({state, meta, video, onPlay, onBack}: StreamsProps) => {
     for (const group of groups) {
       out.push({key: `h-${group.addon.transportUrl}`, header: group.addon.manifest.name, error: group.error});
       group.streams.forEach((stream, index) => {
+        if (DEBRID_ONLY && isTorrentStream(stream)) {
+          return; // debrid only: torrent versions are not offered
+        }
         out.push({key: `${group.addon.transportUrl}-${index}`, stream, addonName: group.addon.manifest.name});
       });
     }
@@ -75,7 +78,7 @@ export const Streams = ({state, meta, video, onPlay, onBack}: StreamsProps) => {
         {video ? ` · ${video.season != null ? `S${video.season}E${video.episode} ` : ''}${video.title || video.name || ''}` : ''}
       </Text>
       <Text style={styles.muted}>
-        {state.server ? `Streaming server: ${state.server}` : 'No streaming server set: torrent streams need the Stremio server on your PC.'}
+        {DEBRID_ONLY ? 'Debrid versions only: torrents are switched off, so your IP address is never shared with torrent peers.' : state.server ? `Streaming server: ${state.server}` : 'No streaming server set: torrent streams need the Stremio server on your PC.'}
       </Text>
       {busy ? <Text style={styles.busy}>{busy}</Text> : null}
       {message ? <Text style={styles.error}>{message}</Text> : null}

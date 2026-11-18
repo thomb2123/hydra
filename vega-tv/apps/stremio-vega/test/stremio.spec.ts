@@ -168,3 +168,29 @@ describe('stream choice fits the measured connection', () => {
     expect(rankForSpeed([{addonName: 'a', streams}], {hasServer: false, runtimeMin: 125, maxMbps: 9.6})[0].traits.resolution).toBe(1080);
   });
 });
+
+describe('debrid only (no torrent swarms)', () => {
+  const {rankStreams} = require('../src/stremio/streamPicker');
+  const {resolveStream, isTorrentStream, DEBRID_ONLY} = require('../src/stremio/streaming');
+  const torrent = {name: 'Torrentio 4K', title: 'Film.2160p.HDR.mkv 👤 500', infoHash: 'a'.repeat(40)};
+  const magnet = {name: 'P2P', title: 'Film.2160p.mkv', url: 'magnet:?xt=urn:btih:' + 'b'.repeat(40)};
+  const debrid = {name: '[RD+] Comet 1080p', title: 'Film.1080p.mkv', url: 'https://example.com/film.mkv'};
+
+  it('is switched on', () => {
+    expect(DEBRID_ONLY).toBe(true);
+    expect(isTorrentStream(torrent)).toBe(true);
+    expect(isTorrentStream(magnet)).toBe(true);
+    expect(isTorrentStream(debrid)).toBe(false);
+  });
+
+  it('never picks a torrent, even a better one with the PC server set', () => {
+    const ranked = rankStreams([{addonName: 'x', streams: [torrent, magnet, debrid]}], {hasServer: true});
+    expect(ranked[0].stream).toBe(debrid);
+    expect(ranked.filter((r: any) => r.playable).map((r: any) => r.stream)).toEqual([debrid]);
+  });
+
+  it('refuses to start a torrent', async () => {
+    await expect(resolveStream(torrent, 'http://192.168.1.242:11470')).rejects.toThrow(/debrid only/);
+    await expect(resolveStream(magnet, 'http://192.168.1.242:11470')).rejects.toThrow(/debrid only/);
+  });
+});

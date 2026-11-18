@@ -197,6 +197,9 @@ cloud workspace can't reach).
   its screenshots are normally bright, so the dimming is on the TV side (LG picture mode /
   energy saving / black level for that HDMI input).
 
+- **Debrid only (18 Nov):** torrent / magnet streams are never picked, hidden from Other versions, and `resolveStream` refuses them (`DEBRID_ONLY` in `stremio/streaming.ts`), so the PC never joins a torrent swarm. Checked on the stick: Avengers: Endgame resumed from Comet (Real-Debrid) with no torrent activity.
+- **Home after a film:** the home screen is rebuilt only once visible again (it showed no rows until a key press when rebuilt hidden under the title page).
+
 ## Open issues (in priority order)
 
 1. **About 5 minutes into a film, playback stalled** (engine only; films now play in the

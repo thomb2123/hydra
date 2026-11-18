@@ -9,6 +9,7 @@
 //   AC-4, FLAC, Opus, MP3. TrueHD is not listed; DTS is HDMI passthrough only.
 // - HLS/DASH need an MSE player this app does not ship yet.
 import {Stream} from './types';
+import {DEBRID_ONLY} from './streaming';
 
 export interface StreamTraits {
   resolution: number; // 2160, 1440, 1080, 720, 480 or 0 when unknown
@@ -200,8 +201,8 @@ export function scoreStream(traits: StreamTraits, options: PickerOptions): numbe
   if (traits.adaptive || traits.external || traits.cam) {
     score -= 5000;
   }
-  if (traits.torrent && !options.hasServer) {
-    score -= 5000;
+  if (traits.torrent && (DEBRID_ONLY || !options.hasServer)) {
+    score -= 5000; // debrid only: never joins a torrent swarm
   }
 
   // Picture.

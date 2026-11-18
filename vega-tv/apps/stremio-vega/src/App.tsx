@@ -3,7 +3,7 @@
 // streaming-service style browser with automatic stream choice.
 // UI in React Native for Vega; playback through Vega's native media player;
 // torrents via the user's own Stremio streaming server on their PC.
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import {PlaySource, VideoScreen} from '../../../shared/src/player/VideoScreen';
 import {exitApp, useBackHandler} from '../../../shared/src/tv/remote';
@@ -51,6 +51,7 @@ export const App = () => {
   const [tab, setTab] = useState<BrowseTab>('home');
   const [stack, setStack] = useState<Route[]>([{name: 'browse'}]);
   const route = stack[stack.length - 1];
+  const browseAlive = useRef(true);
   const playing = route.name === 'player' || route.name === 'tv' || route.name === 'gap';
   useEffect(() => {
     setTvBackgroundPaused(playing);
@@ -233,7 +234,15 @@ export const App = () => {
   // so Back is instant and lands on the same row and card. It is released during
   // playback to give the player the stick's memory.
   const top = route.name === 'browse' ? null : renderTop();
-  const keepBrowse = route.name !== 'player' && route.name !== 'tv' && route.name !== 'gap';
+  // After playback it is rebuilt only once it is on screen again: a list first laid out
+  // while hidden measures as empty and showed no rows until a key was pressed.
+  const onVideo = route.name === 'player' || route.name === 'tv' || route.name === 'gap';
+  if (onVideo) {
+    browseAlive.current = false;
+  } else if (!top) {
+    browseAlive.current = true;
+  }
+  const keepBrowse = !onVideo && browseAlive.current;
   return (
     <View style={styles.fill}>
       {keepBrowse ? (

@@ -104,7 +104,7 @@ export const Settings = ({state, tv, onBack}: {state: StremioState; tv: TvState;
 
       <Text style={styles.heading}>Streaming server (your Windows PC)</Text>
       <Text style={styles.text}>
-        Needed for torrent streams, YouTube and streams that require special headers. Enter the PC's local IP address, for example 192.168.1.20. Direct HTTP streams (e.g. debrid) work without it.
+        Optional: used to check files before playing and for some subtitles. Torrent streams are switched off in this app (debrid only), so your IP address is never shared with torrent peers. Debrid streams play without the PC.
       </Text>
       <View style={styles.row}>
         <TextField label="PC address" value={server} onChangeText={setServer} onSubmit={testServer} placeholder="192.168.1.20" keyboardType="url" />

@@ -17,6 +17,18 @@ export interface ResolvedStream {
   note?: string;
 }
 
+/**
+ * Debrid only: torrent / magnet streams are never played. Playing one makes the PC's
+ * streaming server join the torrent swarm, where every peer sees this home's IP
+ * address; debrid links (Real-Debrid via AIOStreams / Comet) are plain HTTPS downloads.
+ */
+export const DEBRID_ONLY = true;
+
+/** A stream that would need a torrent swarm (info hash or magnet link). */
+export function isTorrentStream(stream: {infoHash?: string; url?: string}): boolean {
+  return !!stream.infoHash || /^magnet:/i.test(stream.url || '');
+}
+
 export function normaliseServerUrl(input: string): string {
   let value = input.trim();
   if (!value) {
@@ -124,6 +136,10 @@ export async function resolveStream(
   const magnet = stream.url ? parseMagnet(stream.url) : null;
   const infoHash = stream.infoHash ? stream.infoHash.toLowerCase() : magnet?.infoHash;
   if (infoHash) {
+    if (DEBRID_ONLY) {
+      // Never join a torrent swarm (peers would see this home's IP address).
+      throw new StreamError('Torrent streams are switched off in this app (debrid only). Choose another version.');
+    }
     if (!server) {
       throw new StreamError(
         'This is a torrent stream. Set up the Stremio streaming server on your PC (Settings → Streaming server) to play it.',
