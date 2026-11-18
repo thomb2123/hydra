@@ -353,6 +353,48 @@ describe('official Sky guide', () => {
     expect(nowTag(rerun, true)).toBe('REPLAY');
     expect(nowTag(studio, true)).toBeNull();
     expect(nowTag(rerun, false)).toBeNull();
+    expect(nowTag({now: {title: 'Sao Paulo F1 Grand Prix', live: false}, outliers: [], official: true}, true)).toBe('REPLAY');
+    expect(nowTag({now: {title: 'PGA Tour: The Cut', live: false}, outliers: [], official: true}, true)).toBeNull();
     expect(displayTitle(live.now)).toBe('Grand Slam Of Darts');
+  });
+});
+
+describe('official guides for every channel', () => {
+  const og = require('../src/tv/officialGuide');
+  const {CHANNELS} = require('../src/tv/lineup');
+
+  it('gives every channel an official guide, or says why there is none', () => {
+    const ids = new Set(CHANNELS.map((c: any) => c.id));
+    const uncovered = CHANNELS.filter((c: any) => !og.guideFor(c.id) && !og.OFFICIAL_NONE[c.id]).map((c: any) => c.id);
+    expect(uncovered).toEqual([]);
+    for (const id of [...Object.keys(og.TVGUIDE_ID), ...Object.keys(og.VIRGIN_ID), ...Object.keys(og.OFFICIAL_NONE)]) {
+      expect(ids.has(id)).toBe(true);
+    }
+  });
+
+  it('reads TV Guide listings with its live flag and descriptions', () => {
+    const grid = og.parseTvGuide({
+      data: {
+        items: [
+          {
+            channel: {name: 'ESPN', sourceId: 9200006937},
+            programSchedules: [
+              {airingAttrib: 524289, startTime: 100, endTime: 200, programId: 1, title: 'College Basketball'},
+              {airingAttrib: 524304, startTime: 200, endTime: 300, programId: 2, title: 'SportsCenter'},
+            ],
+          },
+        ],
+      },
+    });
+    const espn = grid.get(9200006937);
+    expect(espn).toHaveLength(2);
+    expect(espn[0]).toMatchObject({title: 'College Basketball', start: 100, end: 200, live: true, programId: 1});
+    expect(espn[1].live).toBe(false);
+    expect(og.tvGuideDescription({data: {item: {episodeTitle: 'Players Era 8', description: 'From Las Vegas'}}})).toBe('Players Era 8 — From Las Vegas');
+  });
+
+  it('reads Virgin Media listings', () => {
+    const vm = og.parseVirgin({entries: [{channelId: '1954', events: [{title: 'This is TNT Sports Ultimate', startTime: 10, endTime: 20, isLive: false}]}]});
+    expect(vm.get('1954')[0]).toMatchObject({title: 'This is TNT Sports Ultimate', start: 10, end: 20, live: false});
   });
 });

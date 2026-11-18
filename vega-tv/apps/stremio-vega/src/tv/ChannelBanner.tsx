@@ -5,6 +5,7 @@ import React from 'react';
 import {Image, StyleSheet, Text, View} from 'react-native';
 import {brand, type} from '../ui/brand';
 import {NowNext, displayTitle, nowTag, progressOf, timeRange} from './epg';
+import {guideLabel} from './officialGuide';
 
 export interface BannerProps {
   number?: number;
@@ -61,7 +62,11 @@ export const ChannelBanner = ({number, name, logo, badge, info, fallbackTitle, s
           ) : null}
           {info?.streamSays ? (
             <Text style={styles.warn} numberOfLines={1}>
-              {`Sky guide says this; the stream is labelled "${info.streamSays}". If the picture differs, press ☰ for Sources.`}
+              {`${guideLabel(info.guide)} says this; the stream is labelled "${info.streamSays}". If the picture differs, press ☰ for Sources.`}
+            </Text>
+          ) : info && !info.official && info.noGuide ? (
+            <Text style={styles.warn} numberOfLines={1}>
+              {`Not in a TV guide: ${info.noGuide.charAt(0).toLowerCase()}${info.noGuide.slice(1)}.`}
             </Text>
           ) : null}
           {next?.title ? (

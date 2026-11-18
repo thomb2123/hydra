@@ -29,8 +29,10 @@ export interface Programme {
   description?: string;
   start?: number;
   end?: number;
-  /** Set by the official Sky guide: listed as live. */
+  /** Set by the official guides: listed as live. */
   live?: boolean;
+  /** TV Guide programme id (its description is fetched separately). */
+  programId?: number;
 }
 
 export interface Epg {

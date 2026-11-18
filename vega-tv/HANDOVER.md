@@ -144,15 +144,27 @@ cloud workspace can't reach).
 - **Guide navigation:** `TVFocusGuideView` (left returns to the current category, right to
   the last channel), category switch debounced, no focus grabbing after the first view.
 
-- **Official guide (`tv/skyGuide.ts`):** for the 72 UK channels Sky carries, now/next comes
-  from Sky's own listings (`awk.epgsky.com/hawk/linear/schedule/{YYYYMMDD}/{sid}`, reachable
-  from the stick in ~0.1 s, cached 30 min), with synopses. Sky titles live shows "Live …", so
-  LIVE is Sky's word; a match on a sports channel that Sky does not list as live is tagged
-  REPLAY. The providers' own guides are still read: when they disagree with Sky, the guide's
-  details panel and the player banner say what the stream is labelled as, and Sources (☰)
-  marks each source's guide ✓/✗. Live Now's channel check uses the same official listings.
-  Sky renamed channels: Sky Max and Sky Showcase are Sky One (4061); Sky Sports Action, Arena
-  and Darts, and Sky Cinema Hits, Animation and Select, have no Sky listing.
+- **Official guides for every channel (`tv/officialGuide.ts`, `tv/skyGuide.ts`):** now/next
+  is what a real guide says the channel should show, never the IPTV providers' own guide:
+  - UK: Sky's listings (`awk.epgsky.com/hawk/linear/schedule/{YYYYMMDD}/{sid}`, ~0.1 s from
+    the stick, cached 30 min, synopses, live shows titled "Live …"); Virgin Media's guide
+    (6-hour segments, `isLive`) for TNT Sports Ultimate.
+  - US: TV Guide's national grid (`backend.tvguide.com/tvschedules/tvguide/9100001138/web`,
+    one ~200 KB request for ~150 channels, `airingAttrib` bit 1 = live); descriptions per
+    programme from `programdetails/{id}/web`, also fetched for the focused channel if the
+    list's own request did not finish. tvtv.us and Zap2it block UK connections.
+  - No listing anywhere (`OFFICIAL_NONE`, with the reason shown): Sky Sports Action/Darts,
+    Sky Cinema Hits/Animation/Select, Sky Replay, Eurosport 1/2 (closed), LaLiga TV,
+    RedZone, ABC News Live, CBS News, NBC News Now. A test fails if a channel has neither.
+  - Renamed: ITVBe is ITV Quiz, Sky Sports Arena is Sky Sports+, Sky Max/Showcase are Sky One.
+
+  LIVE comes from the guide's own live flag; a match, race or fight on a sports channel that
+  the guide does not list as live is tagged REPLAY. The providers' guides are still read: when
+  they disagree, the details panel and the banner say what the stream is labelled as, and
+  Sources (☰) marks each source's guide ✓/✗. **Live Now:** an event on a channel with an
+  official guide is shown only when that guide lists the match now ("✓ The TV guide lists it
+  on this channel now"); direct event feeds no guide covers are shown last, marked "Not
+  confirmed by a TV guide" (a "beIN Sports 1" feed for Real Madrid v Inter was really ESPN).
 
 ## Open issues (in priority order)
 

@@ -13,6 +13,7 @@ import {MergedChannel} from '../tv/channels';
 import {NowNext, cachedNowNext, cleanTitle, displayTitle, nowNext, nowTag, progressOf, timeRange} from '../tv/epg';
 import {LIVE_NOW_ID, SportEvent} from '../tv/events';
 import {ProgrammeTag} from '../tv/scores';
+import {describe, guideLabel} from '../tv/officialGuide';
 import {prefetchChannel} from '../tv/tune';
 import {TvState} from '../tv/useTv';
 import * as fx from '../tv/flixnest';
@@ -275,8 +276,27 @@ const DetailsPanel = ({register}: {register: React.MutableRefObject<((d: Details
       register.current = null;
     };
   }, [register]);
-  const now = d?.info?.now;
-  const source = !d || !now?.title ? '' : d.info!.official ? 'Sky guide' : "Channel's own guide";
+  // A description that did not arrive with the listing (busy network while the list
+  // loaded) is fetched for the channel being looked at.
+  const [extra, setExtra] = useState<{key: string; text: string} | null>(null);
+  const shown = d?.info?.now;
+  const key = shown ? `${d!.channel.id}|${shown.start}` : '';
+  useEffect(() => {
+    let alive = true;
+    if (shown && shown.programId && !shown.description) {
+      describe(shown).then((p) => alive && p?.description && setExtra({key, text: p.description}));
+    }
+    return () => {
+      alive = false;
+    };
+  }, [key, shown]);
+  const now = shown && !shown.description && extra?.key === key ? {...shown, description: extra.text} : shown;
+  const source =!d || !d.info ? '' : d.info.official ? guideLabel(d.info.guide) : 'Not in a TV guide';
+  const warn = d?.info?.streamSays
+    ? `The stream is labelled "${d.info.streamSays}". If the picture differs, open Sources (☰) while watching.`
+    : d?.info && !d.info.official && d.info.noGuide
+      ? `${d.info.noGuide}. ${now?.title ? "Shown: the stream's own label." : ''}`
+      : ' ';
   return (
     <View style={styles.details}>
       <View style={styles.rowTop}>
@@ -287,10 +307,10 @@ const DetailsPanel = ({register}: {register: React.MutableRefObject<((d: Details
         <Text style={styles.detailsSource}>{source}</Text>
       </View>
       <Text numberOfLines={2} style={styles.detailsDesc}>
-        {now?.description || (d && now?.title ? `${timeRange(now)} on ${d.channel.name}` : d ? 'No listings for this channel right now.' : ' ')}
+        {now?.description || (d && now?.title ? `${timeRange(now)} on ${d.channel.name}` : d && !d.info ? 'Loading listings…' : d ? 'No listings for this channel right now.' : ' ')}
       </Text>
       <Text numberOfLines={1} style={styles.detailsWarn}>
-        {d?.info?.streamSays ? `The stream is labelled "${d.info.streamSays}". If the picture differs, open Sources while watching.` : ' '}
+        {warn}
       </Text>
     </View>
   );
@@ -405,6 +425,11 @@ const EventRow = ({event, preferred, onFocused, onPress}: {event: SportEvent; pr
         <Text numberOfLines={1} style={styles.eventMeta}>
           {[event.competition || event.sport, event.channelName, event.live && event.start ? `started ${timeRange({start: event.start})}` : ''].filter(Boolean).join('  ·  ')}
         </Text>
+        {event.live ? (
+          <Text numberOfLines={1} style={event.confirmed ? styles.confirmed : styles.unconfirmed}>
+            {event.confirmed ? '✓ The TV guide lists it on this channel now' : 'Not confirmed by a TV guide: this feed may show something else'}
+          </Text>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -530,6 +555,8 @@ const styles = StyleSheet.create({
   detailsSource: {color: brand.textMuted, fontSize: type.tiny, fontWeight: '700', marginLeft: 16},
   detailsDesc: {color: brand.textSoft, fontSize: type.small, marginTop: 6, lineHeight: type.small + 8},
   detailsWarn: {color: '#ffb547', fontSize: type.tiny, marginTop: 4},
+  confirmed: {color: brand.match, fontSize: type.tiny, marginTop: 4},
+  unconfirmed: {color: '#ffb547', fontSize: type.tiny, marginTop: 4},
   progressTrack: {height: 4, backgroundColor: brand.surfaceRaised, borderRadius: 2, marginTop: 8, marginRight: 40},
   progressFill: {height: 4, backgroundColor: brand.accent, borderRadius: 2},
   nextTitle: {color: brand.textMuted, fontSize: type.tiny + 1, marginTop: 6},

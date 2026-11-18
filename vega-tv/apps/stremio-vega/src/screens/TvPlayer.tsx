@@ -13,6 +13,7 @@ import {brand, type} from '../ui/brand';
 import * as fx from '../tv/flixnest';
 import {MergedChannel, Source} from '../tv/channels';
 import {NowNext, displayTitle, nowNext} from '../tv/epg';
+import {describe as addDescription, guideLabel} from '../tv/officialGuide';
 import {recordResult} from '../tv/guide';
 import {probeStream} from '../tv/probe';
 import {Status, cachedStatus, checkSource, firstLive, heightOf, markFailed, prefetchChannel} from '../tv/tune';
@@ -143,7 +144,15 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
     if (channel && !feeds) {
       onChannel?.(channel);
       nowNext(access, channel)
-        .then((v) => setInfo(v))
+        .then(async (v) => {
+          setInfo(v);
+          if (v.now?.programId && !v.now.description) {
+            const now = await addDescription(v.now);
+            if (now?.description) {
+              setInfo((cur) => (cur === v ? {...v, now} : cur));
+            }
+          }
+        })
         .catch(() => undefined);
     }
     tune(new Set());
@@ -278,7 +287,7 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
       <Text style={styles.panelTitle}>Sources · {name}</Text>
       <Text style={styles.panelHint}>
         {info?.official && info.now?.title
-          ? `Should be showing (Sky guide): ${displayTitle(info.now)}. Pick another source if the picture differs.`
+          ? `Should be showing (${guideLabel(info.guide)}):${displayTitle(info.now)}. Pick another source if the picture differs.`
           : 'Chosen automatically. Pick another if this one looks wrong.'}
       </Text>
       <FlatList

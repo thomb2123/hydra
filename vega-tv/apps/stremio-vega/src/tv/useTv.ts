@@ -298,7 +298,7 @@ async function checkAgainstGuide(acc: fx.Access, events: SportEvent[], g: GuideD
   // Starting within the Live Now window (plus one refresh): shown as "soon", so checked now too.
   const soon = (e: SportEvent) => !e.live && !!e.start && e.start - now <= EARLY_SEC + EVENTS_REFRESH_MS / 1000;
   const toCheck = events.filter((e) => (e.live || soon(e)) && e.channelId && byId.has(e.channelId) && e.tier <= 1).slice(0, 14);
-  const verdicts = new Map<string, {agrees: 'match' | 'other' | 'unknown'; saysLive: boolean; nextIsIt: boolean}>();
+  const verdicts = new Map<string, {agrees: 'match' | 'other' | 'unknown'; saysLive: boolean; nextIsIt: boolean; official: boolean}>();
   await Promise.all(
     toCheck.map(async (e) => {
       try {
@@ -306,12 +306,13 @@ async function checkAgainstGuide(acc: fx.Access, events: SportEvent[], g: GuideD
         const next = String(nn.next?.title || '').toLowerCase();
         verdicts.set(e.key, {
           agrees: guideAgrees(e, nn.now),
-          saysLive: /\blive\b/i.test(String(nn.now?.title || '')),
+          saysLive: !!nn.now?.live || /\blive\b/i.test(String(nn.now?.title || '')),
+          official: !!nn.official,
           // The channel's next programme is this event, live (or it is already on now).
           nextIsIt: (/\blive\b/.test(next) && eventTokens(e.title).some((t) => next.includes(t))) || guideAgrees(e, nn.now) === 'match',
         });
       } catch {
-        verdicts.set(e.key, {agrees: 'unknown', saysLive: false, nextIsIt: false});
+        verdicts.set(e.key, {agrees: 'unknown', saysLive: false, nextIsIt: false, official: false});
       }
     }),
   );
@@ -326,6 +327,17 @@ async function checkAgainstGuide(acc: fx.Access, events: SportEvent[], g: GuideD
       continue;
     }
     const v = verdicts.get(e.key);
+    if (v?.official) {
+      // The channel has a real TV guide (Sky / Virgin / TV Guide): it must list this match
+      // now. If it lists something else, the channel is not carrying it; a direct feed may
+      // still be offered, marked unconfirmed.
+      if (v.agrees === 'match') {
+        out.push({...e, confirmed: true});
+      } else if (e.feeds.length && e.verified) {
+        out.push({...e, channelId: undefined, channelName: feedLabel(e.feeds[0].rawName), confirmed: false});
+      }
+      continue;
+    }
     if (e.verified) {
       // Live scores confirm play; the channel only has to not be showing something else.
       if (v?.agrees !== 'other') {
@@ -338,5 +350,6 @@ async function checkAgainstGuide(acc: fx.Access, events: SportEvent[], g: GuideD
       out.push(e);
     }
   }
-  return out;
+  // Matches a TV guide confirms on their channel come first; unconfirmed feeds after.
+  return [...out.filter((e) => e.confirmed), ...out.filter((e) => !e.confirmed)];
 }

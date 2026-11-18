@@ -11,6 +11,7 @@ export const SKY_SID: Record<string, string> = {
   'uk-bbc1': '3000', 'uk-bbc2': '2075', 'uk-itv1': '6504', 'uk-ch4': '4075', 'uk-ch5': '4058',
   'uk-showcase': '4061', 'uk-skymax': '4061', 'uk-itv2': '6532', 'uk-e4': '4076', 'uk-dave': '3809',
   'uk-comedycentral': '4056', 'uk-skycomedy': '1143', 'uk-itv4': '6534', 'uk-w': '2617', 'uk-gold': '6513',
+  'uk-itvbe': '3026', // ITVBe is now ITV Quiz
   'uk-bbc3': '2080', 'uk-bbc4': '2086', 'uk-quest': '1128', 'uk-really': '2325', 'uk-5star': '3023',
   // Drama & crime
   'uk-atlantic': '4053', 'uk-witness': '4066', 'uk-skycrime': '1212', 'uk-itv3': '6533', 'uk-alibi': '3825',
@@ -18,6 +19,7 @@ export const SKY_SID: Record<string, string> = {
   // Sport
   'uk-ss-main': '4002', 'uk-ss-pl': '4010', 'uk-ss-football': '3939', 'uk-ss-f1': '3835', 'uk-ss-cricket': '4081',
   'uk-ss-golf': '4026', 'uk-ss-tennis': '1284', 'uk-ss-nfl': '4022', 'uk-ss-mix': '4090', 'uk-ss-racing': '4032',
+  'uk-ss-arena': '3940', // Sky Sports Arena is now Sky Sports+
   'uk-ss-news': '4049', 'uk-tnt1': '3625', 'uk-tnt2': '3627', 'uk-tnt3': '3629', 'uk-tnt4': '4040',
   'uk-premier1': '1289', 'uk-premier2': '1290', 'uk-racingtv': '5272', 'uk-mutv': '1003', 'uk-lfctv': '3845',
   // Films

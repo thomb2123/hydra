@@ -24,6 +24,8 @@ export interface SportEvent {
   endsBy: number;
   /** Confirmed in progress by live scores. */
   verified?: boolean;
+  /** An official TV guide (Sky / Virgin / TV Guide) lists this match on this channel right now. */
+  confirmed?: boolean;
   /** Confirmed by live scores as scheduled (not started yet). */
   scheduled?: boolean;
   /** Its channel or feed was checked and is streaming (not dead or a placeholder). */
