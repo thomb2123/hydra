@@ -4,13 +4,18 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {AppState} from 'react-native';
 import * as fx from './flixnest';
 import {GuideData, buildGuide, isStale, loadCachedGuide, reRank} from './guide';
-import {EARLY_SEC, SportEvent, buildEvents, eventTokens, feedLabel, guideAgrees, isOnNow, liveNow} from './events';
+import {EARLY_SEC, LIVE_NOW_ID, SportEvent, buildEvents, eventTokens, feedLabel, guideAgrees, isOnNow, listingNamesFixture, liveNow} from './events';
 import {firstLive, prefetchChannel} from './tune';
 import {nowNext} from './epg';
+import {describe, officialNowNext} from './officialGuide';
+import {MergedChannel} from './channels';
 import {ProgrammeTag, Scores, applyScores, fetchScores, programmeTag} from './scores';
 import {loadJson, saveJson} from '../../../../shared/src/storage';
 
 const LAST_KEY = 'tv.last.v1';
+const FAVOURITES_KEY = 'tv.favourites.v1';
+const RECENT_KEY = 'tv.recent.v1';
+const RECENT_MAX = 12;
 
 /** Where the viewer was: the guide reopens on this category and channel, like a TV box. */
 export interface LastWatched {
@@ -27,6 +32,11 @@ export interface TvState {
   events: SportEvent[];
   last: LastWatched | null;
   setLast: (last: LastWatched) => void;
+  /** Channel ids the viewer marked as favourites (☰ in the guide), in the order added. */
+  favourites: string[];
+  toggleFavourite: (channelId: string) => boolean;
+  /** Channel ids watched recently, newest first. */
+  recent: string[];
   connect: (access: fx.Access) => Promise<void>;
   disconnect: () => Promise<void>;
   rebuild: () => Promise<void>;
@@ -119,7 +129,8 @@ export function useTv(): TvState {
       // (No background stream checks: each one opens a session on the IPTV account, and
       // the providers' connection limits then refuse films and channels the viewer opens.
       // The player itself fails over between sources when one will not start.)
-      const verified = (await checkAgainstGuide(acc, scored, g)).map((e) => ({...e, streamOk: true}));
+      const checked = await checkAgainstGuide(acc, scored, g);
+      const verified = (await findOnOfficialGuides(checked, g.channels)).map((e) => ({...e, streamOk: true}));
       fetchedAtRef.current = Date.now();
       setEvents(verified);
       const statuses = new Map<string, number>();
@@ -174,6 +185,8 @@ export function useTv(): TvState {
   useEffect(() => {
     (async () => {
       setLastState(await loadJson<LastWatched | null>(LAST_KEY, null));
+      setFavourites(await loadJson<string[]>(FAVOURITES_KEY, []));
+      setRecent(await loadJson<string[]>(RECENT_KEY, []));
       const saved = await fx.loadAccess();
       const cached = await loadCachedGuide();
       setAccess(saved);
@@ -233,13 +246,35 @@ export function useTv(): TvState {
     }
   }, []);
 
+  const [favourites, setFavourites] = useState<string[]>([]);
+  const favouritesRef = useRef(favourites);
+  favouritesRef.current = favourites;
+  const toggleFavourite = useCallback((channelId: string) => {
+    const had = favouritesRef.current.includes(channelId);
+    const next = had ? favouritesRef.current.filter((id) => id !== channelId) : [...favouritesRef.current, channelId];
+    favouritesRef.current = next;
+    setFavourites(next);
+    saveJson(FAVOURITES_KEY, next);
+    return !had;
+  }, []);
+  const [recent, setRecent] = useState<string[]>([]);
   const setLast = useCallback((next: LastWatched) => {
     setLastState((prev) => (prev && prev.channelId === next.channelId && prev.category === next.category ? prev : next));
     saveJson(LAST_KEY, next);
+    if (next.category !== LIVE_NOW_ID) {
+      setRecent((prev) => {
+        if (prev[0] === next.channelId) {
+          return prev;
+        }
+        const list = [next.channelId, ...prev.filter((id) => id !== next.channelId)].slice(0, RECENT_MAX);
+        saveJson(RECENT_KEY, list);
+        return list;
+      });
+    }
   }, []);
 
   const tagProgramme = useCallback((title: string) => programmeTag(title, scores), [scores]);
-  return {ready, access, guide, building, error, events: liveEvents, last, setLast, connect, disconnect, rebuild, refreshRanking, refreshEvents, programmeTag: tagProgramme};
+  return {ready, access, guide, building, error, events: liveEvents, last, setLast, favourites, toggleFavourite, recent, connect, disconnect, rebuild, refreshRanking, refreshEvents, programmeTag: tagProgramme};
 }
 
 const EVENTS_REFRESH_MS = 2 * 60 * 1000;
@@ -285,6 +320,40 @@ async function checkStreams(acc: fx.Access, events: SportEvent[], g: GuideData):
   return out;
 }
 const STALE_EVENTS_MS = 15 * 60 * 1000;
+
+/**
+ * Live matches no official guide has confirmed yet are looked up in the official
+ * listings of every sports channel (Sky / TV Guide, cached; no stream connections):
+ * a channel listing the match live right now becomes the event's channel, confirmed.
+ * E.g. a Women's Champions League match FlixNest only had on a mislabelled "beIN"
+ * feed was live on CBS Sports Network.
+ */
+async function findOnOfficialGuides(events: SportEvent[], channels: MergedChannel[]): Promise<SportEvent[]> {
+  if (!events.some((e) => e.live && !e.confirmed)) {
+    return events;
+  }
+  const sport = channels.filter((c) => c.category === 'uk-sport' || c.category === 'us-sport');
+  const live = (
+    await Promise.all(
+      sport.map(async (c) => {
+        const o = await officialNowNext(c.id).catch(() => null);
+        if (!o?.now?.live) {
+          return null;
+        }
+        const now = (await describe(o.now).catch(() => o.now)) || o.now;
+        return {channel: c, text: `${now.title || ''} ${now.description || ''}`};
+      }),
+    )
+  ).filter((l): l is {channel: MergedChannel; text: string} => !!l);
+  const out = events.map((e) => {
+    if (!e.live || e.confirmed) {
+      return e;
+    }
+    const hit = live.find((l) => listingNamesFixture(e.title, l.text));
+    return hit ? {...e, channelId: hit.channel.id, channelName: hit.channel.name, confirmed: true} : e;
+  });
+  return [...out.filter((e) => e.confirmed), ...out.filter((e) => !e.confirmed)];
+}
 
 /**
  * Checks live events against their channel's own guide for right now (up to 10

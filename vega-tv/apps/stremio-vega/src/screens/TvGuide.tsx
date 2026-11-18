@@ -14,6 +14,7 @@ import {NowNext, cachedNowNext, cleanTitle, displayTitle, nowNext, nowTag, progr
 import {LIVE_NOW_ID, SportEvent} from '../tv/events';
 import {ProgrammeTag} from '../tv/scores';
 import {describe, guideLabel} from '../tv/officialGuide';
+import {useRemoteKeys} from '../../../../shared/src/tv/remote';
 import {prefetchChannel} from '../tv/tune';
 import {TvState} from '../tv/useTv';
 import * as fx from '../tv/flixnest';
@@ -27,17 +28,32 @@ export interface TvGuideProps {
 }
 
 const SPORT_ID = LIVE_NOW_ID;
+const FAVOURITES_ID = 'my-favourites';
+const RECENT_ID = 'my-recent';
 
 export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
   const channels = tv.guide?.channels || [];
+  const byId = useMemo(() => new Map(channels.map((c) => [c.id, c])), [channels]);
+  const favouriteList = useMemo(() => tv.favourites.map((id) => byId.get(id)).filter((c): c is MergedChannel => !!c), [tv.favourites, byId]);
+  const recentList = useMemo(() => tv.recent.map((id) => byId.get(id)).filter((c): c is MergedChannel => !!c), [tv.recent, byId]);
   const categories = useMemo(() => {
     const present = CATEGORIES.filter((c) => channels.some((ch) => ch.category === c.id));
-    return tv.events.length ? [{id: SPORT_ID, title: 'Live Now'}, ...present] : present;
-  }, [channels, tv.events.length]);
+    const mine = [
+      ...(favouriteList.length ? [{id: FAVOURITES_ID, title: 'Favourites'}] : []),
+      ...(recentList.length ? [{id: RECENT_ID, title: 'Recently Watched'}] : []),
+    ];
+    return [...(tv.events.length ? [{id: SPORT_ID, title: 'Live Now'}] : []), ...mine, ...present];
+  }, [channels, tv.events.length, favouriteList.length, recentList.length]);
   // Reopen where the viewer left off (last channel watched), else the first category.
   const [categoryId, setCategoryId] = useState<string>(() => tv.last?.category || '');
   const active = categories.some((c) => c.id === categoryId) ? categoryId : categories[0]?.id || '';
-  const list = useMemo(() => channels.filter((c) => c.category === active), [channels, active]);
+  const list = useMemo(
+    () => (active === FAVOURITES_ID ? favouriteList : active === RECENT_ID ? recentList : channels.filter((c) => c.category === active)),
+    // Recently Watched keeps its order while open (watching reorders it for next time).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [channels, active, favouriteList, active === RECENT_ID ? null : recentList],
+  );
+  const favouriteSet = useMemo(() => new Set(tv.favourites), [tv.favourites]);
   // Only the first view of the guide puts focus on the last channel watched. After the
   // viewer starts moving, nothing grabs focus (a list appearing must not pull focus in).
   const settled = useRef(false);
@@ -95,7 +111,37 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
   // The focused channel's programme details go to a fixed panel above the list
   // (through a ref, so rows and the list never re-render or change height).
   const detailsRef = useRef<((d: Details | null) => void) | null>(null);
-  const showDetails = useCallback((d: Details | null) => detailsRef.current?.(d), []);
+  // The channel that has focus right now (null once focus leaves the list), for ☰.
+  const focusedChannel = useRef<MergedChannel | null>(null);
+  const showDetails = useCallback((d: Details | null) => {
+    focusedChannel.current = d?.channel || null;
+    detailsRef.current?.(d);
+  }, []);
+  const leaveChannel = useCallback((id: string) => {
+    if (focusedChannel.current?.id === id) {
+      focusedChannel.current = null;
+    }
+  }, []);
+  // ☰ on a channel adds it to (or removes it from) Favourites.
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toggleFavourite = tv.toggleFavourite;
+  useRemoteKeys((key) => {
+    const c = focusedChannel.current;
+    if ((key === 'menu' || key === 'context_menu') && c) {
+      const added = toggleFavourite(c.id);
+      setToast(added ? `★  ${c.name} added to Favourites` : `${c.name} removed from Favourites`);
+      if (toastTimer.current) {
+        clearTimeout(toastTimer.current);
+      }
+      toastTimer.current = setTimeout(() => setToast(null), 2200);
+    }
+  });
+  useEffect(() => () => {
+    if (toastTimer.current) {
+      clearTimeout(toastTimer.current);
+    }
+  }, []);
   const renderChannel = useCallback(
     ({item, index}: {item: MergedChannel; index: number}) => (
       <ChannelRow
@@ -103,13 +149,15 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
         channel={item}
         preferred={index === resumeIndex}
         liveTitle={liveOnRef.current.get(item.id)}
+        favourite={favouriteSet.has(item.id)}
         onFocused={markSettled}
         onDetails={showDetails}
+        onLeave={leaveChannel}
         tagFor={tagFor}
         onPress={() => playChannel(item, list)}
       />
     ),
-    [access, resumeIndex, markSettled, playChannel, list, tagFor, showDetails],
+    [access, resumeIndex, markSettled, playChannel, list, tagFor, showDetails, leaveChannel, favouriteSet],
   );
   const renderEvent = useCallback(
     ({item, index}: {item: SportEvent; index: number}) => <EventRow event={item} preferred={index === resumeEvent} onFocused={markSettled} onPress={() => playEvent(item)} />,
@@ -217,6 +265,11 @@ export const TvGuide = ({tv, nav, playChannel, playEvent}: TvGuideProps) => {
           )}
         </TVFocusGuideView>
       </View>
+      {toast ? (
+        <View style={styles.toast} pointerEvents="none">
+          <Text style={styles.toastText}>{toast}</Text>
+        </View>
+      ) : null}
     </View>
   );
 };
@@ -291,7 +344,7 @@ const DetailsPanel = ({register}: {register: React.MutableRefObject<((d: Details
     };
   }, [key, shown]);
   const now = shown && !shown.description && extra?.key === key ? {...shown, description: extra.text} : shown;
-  const source =!d || !d.info ? '' : d.info.official ? guideLabel(d.info.guide) : 'Not in a TV guide';
+  const source = !d ? '' : `${!d.info ? '' : d.info.official ? `${guideLabel(d.info.guide)}   ·   ` : 'Not in a TV guide   ·   '}☰ Favourite`;
   const warn = d?.info?.streamSays
     ? `The stream is labelled "${d.info.streamSays}". If the picture differs, open Sources (☰) while watching.`
     : d?.info && !d.info.official && d.info.noGuide
@@ -320,7 +373,7 @@ type Avail = 'unknown' | 'checking' | 'on' | 'off';
 
 const SPORT_CATEGORIES = new Set(['uk-sport', 'us-sport']);
 
-export const ChannelRow = memo(({access, channel, preferred, liveTitle, onFocused, onDetails, tagFor, onPress}: {access: fx.Access; channel: MergedChannel; preferred?: boolean; liveTitle?: string; onFocused?: () => void; onDetails?: (d: Details | null) => void; tagFor?: (title: string) => ProgrammeTag; onPress: () => void}) => {
+export const ChannelRow = memo(({access, channel, preferred, liveTitle, favourite, onFocused, onDetails, onLeave, tagFor, onPress}: {access: fx.Access; channel: MergedChannel; preferred?: boolean; liveTitle?: string; favourite?: boolean; onFocused?: () => void; onDetails?: (d: Details | null) => void; onLeave?: (id: string) => void; tagFor?: (title: string) => ProgrammeTag; onPress: () => void}) => {
   const [focused, setFocused] = useState(false);
   const [avail, setAvail] = useState<Avail>('unknown');
   const [info, setInfo] = useState<NowNext | null>(() => cachedNowNext(channel));
@@ -371,7 +424,10 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, onFocuse
         setFocused(true);
         onFocused?.();
       }}
-      onBlur={() => setFocused(false)}
+      onBlur={() => {
+        setFocused(false);
+        onLeave?.(channel.id);
+      }}
       accessibilityLabel={`${channel.name}${now?.title ? `, now ${cleanTitle(now.title)}` : ''}`}
       style={[styles.row, focused && styles.rowFocused]}>
       <View style={styles.logoBox}>
@@ -384,6 +440,7 @@ export const ChannelRow = memo(({access, channel, preferred, liveTitle, onFocuse
             {channel.name}
           </Text>
           {channel.badge ? <Text style={styles.badge}>{channel.badge}</Text> : null}
+          {favourite ? <Text style={styles.star}>★</Text> : null}
           <View style={styles.flex} />
           {avail === 'off' ? <Text style={styles.offAir}>Off air right now</Text> : null}
         </View>
@@ -556,6 +613,9 @@ const styles = StyleSheet.create({
   detailsDesc: {color: brand.textSoft, fontSize: type.small, marginTop: 6, lineHeight: type.small + 8},
   detailsWarn: {color: '#ffb547', fontSize: type.tiny, marginTop: 4},
   confirmed: {color: brand.match, fontSize: type.tiny, marginTop: 4},
+  star: {color: '#ffc940', fontSize: type.body, marginLeft: 12},
+  toast: {position: 'absolute', bottom: 60, alignSelf: 'center', backgroundColor: 'rgba(20,20,26,0.96)', borderRadius: 12, paddingHorizontal: 34, paddingVertical: 18, borderWidth: 2, borderColor: brand.surfaceRaised},
+  toastText: {color: brand.text, fontSize: type.body, fontWeight: '800'},
   unconfirmed: {color: '#ffb547', fontSize: type.tiny, marginTop: 4},
   progressTrack: {height: 4, backgroundColor: brand.surfaceRaised, borderRadius: 2, marginTop: 8, marginRight: 40},
   progressFill: {height: 4, backgroundColor: brand.accent, borderRadius: 2},

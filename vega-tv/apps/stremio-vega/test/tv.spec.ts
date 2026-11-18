@@ -398,3 +398,31 @@ describe('official guides for every channel', () => {
     expect(vm.get('1954')[0]).toMatchObject({title: 'This is TNT Sports Ultimate', start: 10, end: 20, live: false});
   });
 });
+
+describe('channel audit fixes', () => {
+  const {rankSources, knownWrong} = require('../src/tv/channels');
+  const {agreesWithOfficial} = require('../src/tv/epg');
+  const src = (provider: string, rawName: string, quality = 4) => ({provider, id: rawName, rawName, quality, fps60: false, hevc: false, epgId: '', logo: ''});
+
+  it('tries sources caught showing placeholders or other channels last', () => {
+    expect(knownWrong(src('dream4k_tv', '|UK| SKY COMEDY ᵁᴴᴰ'))).toBe(true);
+    expect(knownWrong(src('streamsports99', 'US| ABC HD'))).toBe(true);
+    expect(knownWrong(src('strong_vault_tv', 'US: ABC (EAST)'))).toBe(false);
+    const ranked = rankSources([src('streamsports99', 'US| ABC HD', 3), src('strong_vault_tv', 'US: ABC (EAST)', 2)]);
+    expect(ranked[0].rawName).toBe('US: ABC (EAST)');
+  });
+
+  it('does not flag a stream label that is one programme behind or the series name', () => {
+    const official = {now: {title: 'Exeter Women v Saracens Women', description: "Premiership Women's Rugby: Exeter host Saracens."}, prev: {title: 'BBC London News'}, next: null};
+    expect(agreesWithOfficial('BBC London News', official)).toBe(true);
+    expect(agreesWithOfficial("Premiership Women's Rugby", official)).toBe(true);
+    expect(agreesWithOfficial('The Simpsons', official)).toBe(false);
+  });
+
+  it('finds a live match in an official listing by both team names', () => {
+    const {listingNamesFixture} = require('../src/tv/events');
+    expect(listingNamesFixture('Real Madrid v Inter', "UEFA Women's Champions League Soccer Internazionale at Real Madrid from Estadio Santiago Bernabeu")).toBe(true);
+    expect(listingNamesFixture('Real Madrid v Inter', "UEFA Women's Champions League Soccer Chelsea at Real Madrid")).toBe(false);
+    expect(listingNamesFixture('UFC 320', 'UFC 320 Prelims')).toBe(false);
+  });
+});

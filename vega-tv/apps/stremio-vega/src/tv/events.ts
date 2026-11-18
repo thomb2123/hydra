@@ -210,6 +210,19 @@ export function eventTokens(title: string): string[] {
     .filter((w) => w.length >= 4 && !/^(?:united|city|town|county|rovers|athletic|club|fight|night|main|card|live|league|cup)$/.test(w));
 }
 
+/** True when a listing names both sides of the fixture ("Internazionale at Real Madrid" for "Real Madrid v Inter"). */
+export function listingNamesFixture(title: string, listing: string): boolean {
+  const sides = title.split(/\s+(?:v|vs\.?|at|@)\s+/i);
+  if (sides.length !== 2) {
+    return false;
+  }
+  const text = listing.toLowerCase();
+  return sides.every((side) => {
+    const words = eventTokens(side);
+    return words.length > 0 && words.some((w) => text.includes(w));
+  });
+}
+
 /**
  * Compares the channel's own guide entry for right now with the event. Returns
  * 'match' when the guide names it, 'other' when the guide clearly shows something

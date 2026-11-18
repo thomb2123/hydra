@@ -74,13 +74,27 @@ export function sameProgramme(a?: string, b?: string): boolean {
 }
 
 /**
+ * A stream's own label agrees with the official guide when it names the programme on now,
+ * or the one just before/after (provider guides often run a slot behind), or is the series
+ * name the official description gives ("Premiership Women's Rugby" for "Exeter Women v …").
+ */
+export function agreesWithOfficial(title: string, official: {now: fx.Programme | null; next?: fx.Programme | null; prev?: fx.Programme | null}): boolean {
+  if ([official.now, official.prev, official.next].some((p) => p?.title && sameProgramme(title, p.title))) {
+    return true;
+  }
+  const mine = [...words(title)];
+  const desc = String(official.now?.description || '').toLowerCase();
+  return mine.length >= 2 && mine.every((w) => desc.includes(w));
+}
+
+/**
  * The official guide (Sky) is what the channel should be showing; the stream
  * providers' own guides are kept only to point out a stream that is labelled
  * as something else (a different feed, or the provider's guide is wrong).
  */
 export function withOfficial(
   fromStreams: NowNext,
-  sky: {now: fx.Programme | null; next: fx.Programme | null; guide?: GuideName} | null,
+  sky: {now: fx.Programme | null; next: fx.Programme | null; prev?: fx.Programme | null; guide?: GuideName} | null,
   results: {id: string; epg: fx.Epg}[],
   noGuide?: string,
 ): NowNext {
@@ -94,13 +108,13 @@ export function withOfficial(
     return {...fromStreams, sourceNow, noGuide};
   }
   const streamTitle = fromStreams.now?.title;
-  const differs = !!streamTitle && !sameProgramme(streamTitle, sky.now.title);
+  const differs = !!streamTitle && !agreesWithOfficial(streamTitle, sky);
   return {
     now: sky.now,
     next: sky.next,
     official: true,
     guide: sky.guide || 'Sky',
-    outliers: Object.entries(sourceNow).filter(([, t]) => !sameProgramme(t, sky.now!.title)).map(([id]) => id),
+    outliers: Object.entries(sourceNow).filter(([, t]) => !agreesWithOfficial(t, sky)).map(([id]) => id),
     streamSays: differs ? cleanTitle(streamTitle) : undefined,
     sourceNow,
   };

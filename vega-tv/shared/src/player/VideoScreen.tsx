@@ -106,6 +106,8 @@ export interface VideoScreenProps {
   onLog?: (line: string) => void;
   /** Live TV zapping: ▲/▼ and Channel +/- switch channel (step +1/-1); Menu opens subtitles. */
   onZap?: (step: number) => void;
+  /** Live TV: ◀ goes back to the previous channel (live streams cannot be skipped through). */
+  onPrevious?: () => void;
   /** Called instead of showing an error when this source fails before it starts playing. */
   onFailed?: (reason: string) => void;
   /** Called once, when this source first starts playing (with the picture size when known). */
@@ -335,7 +337,7 @@ const PanelRow = ({label, selected, onPress, preferred}: {label: string; selecte
 
 // ---------------------------------------------------------------------------
 
-export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, onFailed, onStarted, onMenu, inputLocked, chromeless, onInfo, onNext, nextLabel, preferredSubtitle, onSubtitleChosen, onRouteSwitched, onUseEngine, onTooSlow}: VideoScreenProps) => {
+export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, onPrevious, onFailed, onStarted, onMenu, inputLocked, chromeless, onInfo, onNext, nextLabel, preferredSubtitle, onSubtitleChosen, onRouteSwitched, onUseEngine, onTooSlow}: VideoScreenProps) => {
   const autoSubDone = useRef(false);
   const mkvRef = useRef<MkvSession | null>(null);
   const [embedded, setEmbeddedState] = useState<EmbeddedSubtitleTrack[]>([]);
@@ -1216,9 +1218,44 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
     scheduleHide();
   };
 
+  // Up Next: in an episode's last 40 seconds, a card offers the next one and plays it
+  // after a 15 s countdown (OK plays it now, Back keeps watching the credits).
+  const onNextRef = useRef(onNext);
+  onNextRef.current = onNext;
+  const [upNextDismissed, setUpNextDismissed] = useState(false);
+  const upNextLeft = duration - position;
+  const upNextVisible = !!onNext && !source.live && duration > 300 && position > 0 && upNextLeft <= 40 && !upNextDismissed && !panel && !error && scrub == null;
+  const [upNextCount, setUpNextCount] = useState(15);
+  useEffect(() => {
+    if (upNextLeft > 60 && upNextDismissed) {
+      setUpNextDismissed(false); // skipped back: offer it again next time
+    }
+  }, [upNextLeft, upNextDismissed]);
+  useEffect(() => {
+    if (!upNextVisible || paused) {
+      return undefined;
+    }
+    setUpNextCount((c) => (c <= 0 ? 15 : c));
+    const timer = setInterval(() => {
+      setUpNextCount((c) => {
+        if (c <= 1) {
+          clearInterval(timer);
+          onNextRef.current?.();
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [upNextVisible, paused]);
+
   useRemoteKeys((key: RemoteKey) => {
     if (panel) {
       return; // The side panel uses normal focus navigation.
+    }
+    if (upNextVisible && !hud && key === 'select' && onNext) {
+      onNext();
+      return;
     }
     if (area === 'buttons') {
       if (key === 'up') {
@@ -1252,7 +1289,11 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
         togglePlay();
         break;
       case 'left':
-        scrubBy(-1);
+        if (onPrevious && source.live) {
+          onPrevious();
+        } else {
+          scrubBy(-1);
+        }
         break;
       case 'right':
         scrubBy(1);
@@ -1304,6 +1345,10 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       closePanel();
       return true;
     }
+    if (upNextVisible && !hud) {
+      setUpNextDismissed(true);
+      return true;
+    }
     if (scrubRef.current != null) {
       scrubRef.current = null;
       setScrub(null);
@@ -1336,6 +1381,14 @@ export const VideoScreen = ({source, onExit, onEnded, onProgress, onLog, onZap, 
       {subText ? (
         <View style={[styles.subtitleBox, hud && !panel ? styles.subtitleRaised : null]} pointerEvents="none">
           <Text style={styles.subtitleText}>{subText}</Text>
+        </View>
+      ) : null}
+
+      {upNextVisible && !hud ? (
+        <View style={styles.upNext} pointerEvents="none">
+          <Text style={styles.upNextLabel}>{nextLabel || 'Next Episode'}</Text>
+          <Text style={styles.upNextCount}>{`Playing in ${Math.max(1, upNextCount)}`}</Text>
+          <Text style={styles.upNextHint}>OK  play now     Back  keep watching</Text>
         </View>
       ) : null}
 
@@ -1464,6 +1517,10 @@ const styles = StyleSheet.create({
 
   centre: {position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 3},
   spinner: {width: 96, height: 96, borderRadius: 48, borderWidth: 7, borderColor: 'rgba(255,255,255,0.18)', borderTopColor: ACCENT},
+  upNext: {position: 'absolute', right: 96, bottom: 110, width: 520, backgroundColor: 'rgba(16,16,22,0.94)', borderRadius: 14, borderWidth: 2, borderColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 32, paddingVertical: 24},
+  upNextLabel: {color: '#fff', fontSize: 34, fontWeight: '900'},
+  upNextCount: {color: '#d9d9e3', fontSize: 26, fontWeight: '700', marginTop: 8},
+  upNextHint: {color: '#9a9aa8', fontSize: 20, marginTop: 14},
   centreNote: {color: '#fff', fontSize: 28, fontWeight: '700', marginTop: 24, textShadowColor: 'rgba(0,0,0,0.9)', textShadowOffset: {width: 0, height: 1}, textShadowRadius: 6},
 
   topArea: {position: 'absolute', top: 0, left: 0, right: 0, height: 260, paddingHorizontal: 90, paddingTop: 60, zIndex: 4},

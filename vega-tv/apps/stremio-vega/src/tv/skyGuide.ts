@@ -23,6 +23,8 @@ export const SKY_SID: Record<string, string> = {
   'uk-ss-news': '4049', 'uk-tnt1': '3625', 'uk-tnt2': '3627', 'uk-tnt3': '3629', 'uk-tnt4': '4040',
   'uk-premier1': '1289', 'uk-premier2': '1290', 'uk-racingtv': '5272', 'uk-mutv': '1003', 'uk-lfctv': '3845',
   // Films
+  // Provider "Sky Cinema Hits" / "Select" streams carry Sky's seasonal pop-ups (checked by frame, 18 Nov 2026).
+  'uk-sc-hits': '4033', 'uk-sc-select': '4020',
   'uk-sc-premiere': '4021', 'uk-sc-greats': '4015', 'uk-sc-action': '4014', 'uk-sc-thriller': '4062',
   'uk-sc-comedy': '4019', 'uk-sc-drama': '4016', 'uk-sc-scifi': '4017', 'uk-sc-family': '4018', 'uk-film4': '4044',
   // News
@@ -92,16 +94,16 @@ async function fetchDay(sid: string, date: string): Promise<SkyProgramme[]> {
   return task;
 }
 
-export function pickNowNext(list: SkyProgramme[], now: number): {now: SkyProgramme | null; next: SkyProgramme | null} {
+export function pickNowNext(list: SkyProgramme[], now: number): {now: SkyProgramme | null; next: SkyProgramme | null; prev: SkyProgramme | null} {
   const i = list.findIndex((p) => p.start <= now && now < p.end);
   if (i >= 0) {
-    return {now: list[i], next: list[i + 1] || null};
+    return {now: list[i], next: list[i + 1] || null, prev: list[i - 1] || null};
   }
-  return {now: null, next: list.find((p) => p.start > now) || null};
+  return {now: null, next: list.find((p) => p.start > now) || null, prev: null};
 }
 
 /** What Sky's guide says is on this channel now and next; null when Sky does not carry it or cannot be reached. */
-export async function skyNowNext(channelId: string, now = Date.now() / 1000): Promise<{now: SkyProgramme | null; next: SkyProgramme | null} | null> {
+export async function skyNowNext(channelId: string, now = Date.now() / 1000): Promise<{now: SkyProgramme | null; next: SkyProgramme | null; prev: SkyProgramme | null} | null> {
   const sid = SKY_SID[channelId];
   if (!sid) {
     return null;

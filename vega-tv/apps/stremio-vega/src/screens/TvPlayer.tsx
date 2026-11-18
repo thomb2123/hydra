@@ -222,19 +222,41 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
     [access, feeds, index, list, onRanked, playing, playingStatus, showBanner],
   );
 
+  // ◀ jumps back to the channel watched before this one (like a TV remote's "last" key).
+  const previousIndex = useRef<number | null>(null);
   const zap = useCallback(
     (step: number) => {
       if (feeds || list.length < 2) {
         return;
       }
-      setIndex((i) => (i + step + list.length) % list.length);
+      setIndex((i) => {
+        previousIndex.current = i;
+        return (i + step + list.length) % list.length;
+      });
     },
     [feeds, list.length],
   );
+  const backToPrevious = useCallback(() => {
+    const prev = previousIndex.current;
+    if (feeds || prev == null || prev === index || prev >= list.length) {
+      return;
+    }
+    previousIndex.current = index;
+    setIndex(prev);
+  }, [feeds, index, list.length]);
 
   const choose = useCallback(
     async (s: Source) => {
       const g = ++gen.current;
+      // Switching away by hand means that source looked wrong (another channel, a
+      // "maintenance" clip, poor picture): it drops down the list for a while.
+      if (playing && playing.id !== s.id) {
+        log(`tv ${name}: viewer switched from ${playing.provider} to ${s.provider}; demoting the first`);
+        markFailed(playing);
+        recordResult(playing, false)
+          .then(() => onRanked?.())
+          .catch(() => undefined);
+      }
       setPanel(false);
       setSource(null);
       holdBanner();
@@ -250,7 +272,7 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
         setFailure(`That source is ${st.state === 'placeholder' ? 'off air' : 'not available'} right now.`);
       }
     },
-    [access, holdBanner, log, start],
+    [access, holdBanner, log, start, playing, name, onRanked],
   );
 
   useBackHandler(() => {
@@ -345,6 +367,7 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
           onEnded={() => onFailed('stream ended')}
           onStarted={onStarted}
           onZap={feeds ? undefined : zap}
+          onPrevious={feeds ? undefined : backToPrevious}
           onMenu={sources.length > 1 ? () => setPanel(true) : undefined}
           onInfo={() => showBanner(8000)}
           chromeless

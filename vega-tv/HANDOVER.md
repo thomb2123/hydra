@@ -166,6 +166,37 @@ cloud workspace can't reach).
   on this channel now"); direct event feeds no guide covers are shown last, marked "Not
   confirmed by a TV guide" (a "beIN Sports 1" feed for Real Madrid v Inter was really ESPN).
 
+- **Channel audit, 18 Nov ~19:35 (scratchpad `audit_guide.spec.ts`, `audit_frames.mjs`,
+  `audit_sheets.mjs`):** the line-up was built exactly as the stick does, then one real frame
+  was grabbed (ffmpeg on the PC) from the source the app ranks first on every channel, and
+  labelled with the official listing. 119/142 gave a picture first time (1 × 4K, 72 × 1080p,
+  39 × 720p, 7 SD); almost all matched their official listing. Found and fixed:
+  - looping "UNDER MAINTENANCE" / "NO LIVE EVENT" clips served as live streams (their playlists
+    look normal) on dream4k "ᵁᴴᴰ" Sky Comedy, Sky Atlantic, Sky Sports NFL, Premier Sports 2;
+    generic US network entries carrying other channels (streamsports99 "ABC HD" = ABC News
+    Live, "FOX HD" = Fox News, dream4k "NBC ᴴᴰ" = CNBC). `KNOWN_WRONG` in `channels.ts`
+    ranks them last; the affiliate feeds ("ABC (EAST)", "NBC (WNBC)") are the real networks.
+  - Sky Cinema Hits / Select streams carry Sky's pop-ups (xXx, Christmas): mapped to those
+    Sky listings, Select renamed Sky Cinema Christmas. Sky Sports Action and Darts removed
+    (not Sky channels any more; they carried other channels' programmes).
+  - Provider labels one programme behind/ahead, or naming the series, no longer count as a
+    mismatch (`agreesWithOfficial`).
+  - After ~140 openings the providers refused further connections ("I/O error"), so Sky
+    Cinema Premiere/Drama, TNT Sports 1/3, BBC Three, C+I, Sky Nature, E!, Food Network, FS2,
+    MLB Network, Golf Channel, HBO Signature, Bloomberg, The CW, LaLiga TV were not verified.
+- **Live Now from official listings:** a live match no guide has confirmed on its channel is
+  looked up in every sports channel's official listing (title + description, both team
+  names); the channel listing it live becomes the event's channel, confirmed (the "beIN"
+  Real Madrid v Inter feed was really on CBS Sports Network per TV Guide).
+- **New:** Favourites (☰ on a channel; "Favourites" category with ★), "Recently Watched"
+  category, ◀ while watching live TV returns to the previous channel, switching source by
+  hand demotes the source left behind, Netflix-style "Next Episode" card in the last 40 s
+  of an episode (15 s countdown, OK plays now, Back hides it), short fades between screens.
+- **Dark picture on the stick (even its home screen):** the stick outputs a normal SDR
+  signal (4K 59.94 Hz, 8-bit, colour space Auto, HDR Adaptive; `graphicsutility -d`), and
+  its screenshots are normally bright, so the dimming is on the TV side (LG picture mode /
+  energy saving / black level for that HDMI input).
+
 ## Open issues (in priority order)
 
 1. **About 5 minutes into a film, playback stalled** (engine only; films now play in the

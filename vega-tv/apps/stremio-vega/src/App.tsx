@@ -17,6 +17,7 @@ import {Splash} from './screens/Splash';
 import {Starting} from './screens/Starting';
 import {Streams} from './screens/Streams';
 import {brand} from './ui/brand';
+import {FadeIn} from './ui/FadeIn';
 import {RankedStream} from './stremio/streamPicker';
 import {nextEpisode} from './stremio/playback';
 import {forgetPick, noteFailure} from './stremio/autoPick';
@@ -236,7 +237,7 @@ export const App = () => {
   return (
     <View style={styles.fill}>
       {keepBrowse ? (
-        <View style={[styles.fill, top ? styles.hidden : null]}>
+        <FadeIn token={top ? 'hidden' : `browse-${stack.length}`} style={[styles.fill, top ? styles.hidden : null]}>
           <BrowseRoot
             active={!top}
             state={state}
@@ -250,9 +251,18 @@ export const App = () => {
             playChannel={playChannel}
             playEvent={playEvent}
           />
-        </View>
+        </FadeIn>
       ) : null}
-      {top ? <View style={styles.layer}>{top}</View> : null}
+      {top ? (
+        // Video screens appear on their own (a fade over a starting picture would flash).
+        route.name === 'player' || route.name === 'tv' || route.name === 'gap' ? (
+          <View style={styles.layer}>{top}</View>
+        ) : (
+          <FadeIn token={`${stack.length}-${route.name}`} style={styles.layer}>
+            {top}
+          </FadeIn>
+        )
+      ) : null}
     </View>
   );
 };

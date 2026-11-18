@@ -13,6 +13,8 @@ export type GuideName = 'Sky' | 'Virgin Media' | 'TV Guide';
 export interface OfficialNowNext {
   now: Programme | null;
   next: Programme | null;
+  /** The programme before (provider guides often run one behind). */
+  prev?: Programme | null;
   guide: GuideName;
 }
 
@@ -44,14 +46,10 @@ export const VIRGIN_ID: Record<string, string> = {
 
 /** Channels no official guide lists, and why (shown instead of a made-up listing). */
 export const OFFICIAL_NONE: Record<string, string> = {
-  'uk-ss-action': 'Sky no longer has this channel',
-  'uk-ss-darts': 'Sky no longer has this channel (darts is on Sky Sports Main Event)',
-  'uk-sc-hits': 'Sky no longer has this channel',
   'uk-sc-animation': 'Sky no longer has this channel',
-  'uk-sc-select': 'Sky no longer has this channel',
   'uk-skyreplay': 'Sky no longer has this channel',
-  'uk-euro1': 'Eurosport 1 is no longer broadcast in the UK',
-  'uk-euro2': 'Eurosport 2 is no longer broadcast in the UK',
+  'uk-euro1': 'Eurosport 1 is not in the Sky or Virgin guides',
+  'uk-euro2': 'Eurosport 2 is not in the Sky or Virgin guides',
   'uk-laliga': 'LaLiga TV is not in the Sky or Virgin guides',
   'us-redzone': 'RedZone has no fixed schedule (it follows Sunday NFL games)',
   'us-abcnews': 'A streaming-only channel with no TV listing',
@@ -68,10 +66,12 @@ export function guideFor(channelId: string): GuideName | null {
   return SKY_SID[channelId] ? 'Sky' : VIRGIN_ID[channelId] ? 'Virgin Media' : TVGUIDE_ID[channelId] ? 'TV Guide' : null;
 }
 
-function pick(list: Programme[], now: number): {now: Programme | null; next: Programme | null} {
+function pick(list: Programme[], now: number): {now: Programme | null; next: Programme | null; prev: Programme | null} {
   const sorted = [...list].sort((a, b) => (a.start || 0) - (b.start || 0));
   const i = sorted.findIndex((p) => (p.start || 0) <= now && now < (p.end || 0));
-  return i >= 0 ? {now: sorted[i], next: sorted[i + 1] || null} : {now: null, next: sorted.find((p) => (p.start || 0) > now) || null};
+  return i >= 0
+    ? {now: sorted[i], next: sorted[i + 1] || null, prev: sorted[i - 1] || null}
+    : {now: null, next: sorted.find((p) => (p.start || 0) > now) || null, prev: null};
 }
 
 // ---- TV Guide (US) ----
@@ -211,7 +211,7 @@ async function virginSegment(sec: number): Promise<Map<string, Programme[]>> {
 export async function officialNowNext(channelId: string, now = Date.now() / 1000): Promise<OfficialNowNext | null> {
   if (SKY_SID[channelId]) {
     const sky = await skyNowNext(channelId, now);
-    return sky ? {now: sky.now, next: sky.next, guide: 'Sky'} : null;
+    return sky ? {now: sky.now, next: sky.next, prev: sky.prev, guide: 'Sky'} : null;
   }
   const vmId = VIRGIN_ID[channelId];
   if (vmId) {
@@ -229,7 +229,7 @@ export async function officialNowNext(channelId: string, now = Date.now() / 1000
     if (!found.now && !found.next) {
       return null;
     }
-    return {now: await describe(found.now as TvgProgramme | null), next: found.next, guide: 'TV Guide'};
+    return {now: await describe(found.now as TvgProgramme | null), next: found.next, prev: found.prev, guide: 'TV Guide'};
   }
   return null;
 }

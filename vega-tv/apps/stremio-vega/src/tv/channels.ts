@@ -100,8 +100,28 @@ export function effectiveFailures(rel: Reliability | undefined, key: string, now
   return at ? n * Math.pow(0.5, Math.max(0, now - at) / FAILURE_HALF_LIFE) : n;
 }
 
+/**
+ * Provider entries a frame-by-frame check of every channel (18 Nov 2026) caught showing
+ * something other than their label: a looping "UNDER MAINTENANCE" / "NO LIVE EVENT" clip
+ * served as a live stream (the playlist looks normal, so the tuner cannot tell), or a
+ * different channel (generic US network entries carrying ABC News Live, Fox News, CNBC).
+ * They are tried last, not removed.
+ */
+export const KNOWN_WRONG: {provider: string; name: RegExp}[] = [
+  {provider: 'dream4k_tv', name: /SKY (?:COMEDY|ATLANTIC) ᵁᴴᴰ\s*$/},
+  {provider: 'dream4k_tv', name: /SKY SPORTS (?:ᵁᴴᴰ )?NFL/},
+  {provider: 'dream4k_tv', name: /PREMIER SPORTS 2 ᵁᴴᴰ/},
+  {provider: 'dream4k_tv', name: /^\|US\| NBC ᴴᴰ\s*$/},
+  {provider: 'streamsports99', name: /^US\| (?:ABC|FOX) HD\s*$/},
+];
+
+export const knownWrong = (s: Pick<Source, 'provider' | 'rawName'>) => KNOWN_WRONG.some((k) => k.provider === s.provider && k.name.test(s.rawName));
+
 export function rankSources(sources: Source[], reliability?: Reliability, now = Date.now()): Source[] {
   const score = (s: Source) => {
+    if (knownWrong(s)) {
+      return -100;
+    }
     const key = sourceKey(s);
     const providerOk = reliability?.provider[s.provider] ?? 0.7;
     const failed = Math.min(effectiveFailures(reliability, key, now), 5);
