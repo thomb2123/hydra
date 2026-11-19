@@ -246,6 +246,11 @@ cloud workspace can't reach).
   - Menu sounds are now released as soon as a film starts loading (`starting` route), not when its player appears.
   - **Not verified yet (stick not used overnight: sounds and TV wake-ups):** a film and a live channel actually playing with the menu-sound build (audio players released first); the menu sounds and intro sound by ear; the genre page banner.
 
+- **Stick unreachable (19 Nov, ~00:01 to at least 02:51):**
+  - Just after a live channel was started on the menu-sound build, the developer shell (`com.amazon.dev.shell.service`) went away and did not come back for 3+ hours. The stick still answered ping and `vda devices` showed it connected; every shell, screenshot, key and log command failed with "No running instances of com.amazon.dev.shell.service".
+  - Not diagnosed: logs could not be pulled without the shell. The Vega docs say media playback counts as user engagement and keeps the device out of idle, so a sleep while the channel was really playing is unlikely; more likely the channel stopped and the stick then idled. Next time: wake the stick (Home on the remote), then `vega device get-log-info` / `copy-logs` for 00:00–00:05.
+  - Commit 36a634fa3 (late-loading menu-sound players released; video waits for loading and releasing; start-up pause interrupted by video) is built and tested (97 jest, tsc 0, build 0) but **not installed**. Install it with `install_quiet.sh`, then test one live channel and one film with the log stream ("ui sound: released 6", "playing source", perf).
+
 ## Open issues (in priority order)
 
 1. **About 5 minutes into a film, playback stalled** (engine only; films now play in the
