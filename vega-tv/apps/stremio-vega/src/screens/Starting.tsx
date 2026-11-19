@@ -8,6 +8,7 @@ import {Fade} from '../ui/Billboard';
 import {Pill} from '../ui/Cards';
 import {backdropOf, logoOf} from '../ui/art';
 import {brand, edge, type} from '../ui/brand';
+import {releaseUiSoundsForVideo} from '../ui/uiSound';
 import {Pick, pickStream, prefetchPick} from '../stremio/autoPick';
 import {episodeLine, prepareSource} from '../stremio/playback';
 import {RankedStream} from '../stremio/streamPicker';
@@ -51,7 +52,11 @@ export const Starting = ({state, meta, video, startIndex = 0, onReady, onManual,
     (async () => {
       try {
         // First attempt uses the prefetched choice; fallbacks re-check from the next candidate.
-        const pick: Pick | null = startIndex === 0 ? await prefetchPick(state, meta, video, log) : await pickStream(state, meta, video, log, startIndex);
+        // Menu sounds are released (in parallel) before the film's player can be created.
+        const [pick] = await Promise.all([
+          startIndex === 0 ? prefetchPick(state, meta, video, log) : pickStream(state, meta, video, log, startIndex),
+          releaseUiSoundsForVideo(),
+        ]);
         if (cancelled.current) {
           return;
         }

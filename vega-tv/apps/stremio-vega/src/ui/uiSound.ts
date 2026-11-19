@@ -62,6 +62,7 @@ function load(): Promise<void> {
   loading = (async () => {
     // Not while the home screen is being built: a few seconds later, one player at a time.
     await wait(3000);
+    await releasing;
     for (const name of Object.keys(FILES) as UiSound[]) {
       if (suspended || !enabled || players.has(name)) {
         continue;
@@ -90,16 +91,39 @@ function load(): Promise<void> {
   return loading;
 }
 
+/** Finishes when every menu-sound player has been released (resolved when there are none). */
+let releasing: Promise<void> = Promise.resolve();
+
 function release(): void {
-  for (const [name, player] of players) {
-    players.delete(name);
-    try {
-      player.pause();
-    } catch {
-      // already stopped
-    }
-    player.deinitialize().catch(() => undefined);
+  const toRelease = [...players.values()];
+  players.clear();
+  if (!toRelease.length) {
+    return;
   }
+  const previous = releasing;
+  // One at a time, each given up to 1.5 s, so the audio system is never asked to tear
+  // down six players at the moment a video player is being set up.
+  releasing = (async () => {
+    await previous;
+    for (const player of toRelease) {
+      try {
+        player.pause();
+      } catch {
+        // already stopped
+      }
+      await Promise.race([player.deinitialize().catch(() => undefined), wait(1500)]);
+    }
+    log(`released ${toRelease.length}`);
+  })();
+}
+
+/**
+ * Called by the film and live TV players before they create any video: stops the menu
+ * sounds and resolves once their audio players are gone.
+ */
+export function releaseUiSoundsForVideo(): Promise<void> {
+  setUiSoundsSuspended(true);
+  return Promise.race([releasing, wait(6000)]);
 }
 
 export function playUiSound(name: UiSound): void {

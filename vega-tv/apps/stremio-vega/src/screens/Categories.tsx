@@ -159,8 +159,8 @@ export const GenrePage = ({
       {coverArt ? (
         <View style={styles.banner} pointerEvents="none">
           <Image source={{uri: coverArt}} style={styles.bannerArt} resizeMode="cover" fadeDuration={0} />
-          <Fade direction="left" size={900} steps={10} strength={1.4} />
-          <Fade direction="bottom" size={200} steps={8} strength={1.6} />
+          <Fade direction="left" size={1250} steps={12} strength={2.6} />
+          <Fade direction="bottom" size={240} steps={10} strength={2.7} />
         </View>
       ) : null}
       <View style={styles.header}>
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: brand.background, paddingTop: 40},
   header: {flexDirection: 'row', alignItems: 'center', height: 200, paddingTop: 40},
   banner: {position: 'absolute', top: 0, left: 0, right: 0, height: 360, overflow: 'hidden'},
-  bannerArt: {position: 'absolute', top: 0, right: 0, width: 1300, height: 360, opacity: 0.85},
+  bannerArt: {position: 'absolute', top: 0, left: 0, right: 0, height: 360, opacity: 0.9},
   title: {color: brand.text, fontSize: type.title + 8, fontWeight: '900', marginLeft: edge, marginRight: 30, marginBottom: 4},
   muted: {color: brand.textMuted, fontSize: type.body, marginLeft: edge},
   grid: {paddingHorizontal: edge - 12, paddingBottom: 120},

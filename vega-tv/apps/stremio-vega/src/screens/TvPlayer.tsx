@@ -19,6 +19,7 @@ import {probeStream} from '../tv/probe';
 import {Status, cachedStatus, checkSource, firstLive, heightOf, markFailed, prefetchChannel} from '../tv/tune';
 import {ChannelBanner} from '../tv/ChannelBanner';
 import {MiniGuide} from '../tv/MiniGuide';
+import {releaseUiSoundsForVideo} from '../ui/uiSound';
 
 export interface TvPlayerProps {
   access: fx.Access;
@@ -111,6 +112,11 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
       setPanel(false);
       holdBanner();
       const queue = sources.filter((s) => !skip.has(s.id));
+      // No video player while menu-sound players are still being released.
+      await releaseUiSoundsForVideo();
+      if (g !== gen.current) {
+        return;
+      }
       try {
         const found = await firstLive(access, queue, {
           alive: () => g === gen.current,
@@ -297,6 +303,7 @@ export const TvPlayer = ({access, list, index: startIndex, feeds, title, feedNam
       setPanel(false);
       setSource(null);
       holdBanner();
+      await releaseUiSoundsForVideo();
       const known = cachedStatus(s);
       const st = known && known.state === 'live' ? known : await checkSource(access, s, log).catch(() => ({state: 'refused'}) as Status);
       if (g !== gen.current) {
