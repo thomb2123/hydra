@@ -61,7 +61,10 @@ function load(): Promise<void> {
   }
   loading = (async () => {
     // Not while the home screen is being built: a few seconds later, one player at a time.
-    await wait(3000);
+    // (The pause ends at once if video starts, so a channel never waits for it.)
+    for (let t = 0; t < 3000 && !suspended && enabled; t += 100) {
+      await wait(100);
+    }
     await releasing;
     for (const name of Object.keys(FILES) as UiSound[]) {
       if (suspended || !enabled || players.has(name)) {
@@ -79,6 +82,11 @@ function load(): Promise<void> {
         player.volume = VOLUME[name];
         (player as any).preload = 'auto';
         (player as any).load?.();
+        if (suspended || !enabled) {
+          // Video started (or sounds were switched off) while this one was loading.
+          await Promise.race([player.deinitialize().catch(() => undefined), wait(1500)]);
+          continue;
+        }
         players.set(name, player);
       } catch (e: any) {
         log(`${name} unavailable (${e?.message || e})`);
@@ -123,7 +131,9 @@ function release(): void {
  */
 export function releaseUiSoundsForVideo(): Promise<void> {
   setUiSoundsSuspended(true);
-  return Promise.race([releasing, wait(6000)]);
+  // A player still loading gives up (and is released) as soon as it sees the suspension.
+  const settled = (loading || Promise.resolve()).catch(() => undefined).then(() => releasing);
+  return Promise.race([settled, wait(6000)]);
 }
 
 export function playUiSound(name: UiSound): void {
